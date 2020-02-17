@@ -149,20 +149,25 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="Assets\code\core\engine.h" />
+    <ClInclude Include="Assets\code\scene\camera.h" />
     <ClInclude Include="Assets\code\stdafx.h" />
     <ClInclude Include="Assets\code\scene\model.h" />
     <ClInclude Include="Assets\code\scene\mesh.h" />
     <ClInclude Include="Assets\code\scene\material.h" />
     <ClInclude Include="Assets\code\scene\texture.h" />
+    <ClInclude Include="Assets\code\support\keys.h" />
+    <ClInclude Include="Assets\code\support\single_active.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Assets\code\core\engine.cpp" />
     <ClCompile Include="Assets\code\main.cpp" />
+    <ClCompile Include="Assets\code\scene\camera.cpp" />
     <ClCompile Include="Assets\code\scene\mesh.cpp" />
     <ClCompile Include="Assets\code\scene\texture.cpp" />
     <ClCompile Include="Assets\code\stdafx.cpp" />
     <ClCompile Include="Assets\code\scene\model.cpp" />
     <ClCompile Include="Assets\code\scene\material.cpp" />
+    <ClCompile Include="Assets\code\support\keys.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Anvil\build\Anvil.sln" />

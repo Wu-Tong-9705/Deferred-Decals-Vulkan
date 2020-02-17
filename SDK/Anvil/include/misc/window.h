@@ -47,14 +47,32 @@ namespace Anvil
          */
         WINDOW_CALLBACK_ID_ABOUT_TO_CLOSE,
 
-        /* Call-back issued when the user releases a pressed key.
+        /* Call-back issued when the user move a mouse.
          *
-         * callback_arg: pointer to a OnKeypressReleasedCallbackArgument instance.
+         * callback_arg: pointer to a OnMouseMoveCallbackArgument instance.
          **/
-        WINDOW_CALLBACK_ID_KEYPRESS_RELEASED,
+         WINDOW_CALLBACK_ID_MOUSE_MOVE,
 
-        /* Always last */
-        WINDOW_CALLBACK_ID_COUNT
+         /* Call-back issued when the user move a mouse.
+          *
+          * callback_arg: pointer to a OnMouseWheelCallbackArgument instance.
+          **/
+          WINDOW_CALLBACK_ID_MOUSE_WHEEL,
+
+          /* Call-back issued when the user presses a key.
+           *
+           * callback_arg: pointer to a OnKeyCallbackArgument instance.
+           **/
+           WINDOW_CALLBACK_ID_KEY_PRESS,
+
+           /* Call-back issued when the user releases a pressed key.
+            *
+            * callback_arg: pointer to a OnKeyCallbackArgument instance.
+            **/
+            WINDOW_CALLBACK_ID_KEY_RELEASE,
+
+            /* Always last */
+            WINDOW_CALLBACK_ID_COUNT
     };
 
     /* Enumerates available window call-back types.*/
@@ -69,30 +87,30 @@ namespace Anvil
          * the application MUST ensure the swapchain image is transitioned to Anvil::ImageLayout::GENERAL before
          * it is presented.
          **/
-        WINDOW_PLATFORM_DUMMY_WITH_PNG_SNAPSHOTS,
+         WINDOW_PLATFORM_DUMMY_WITH_PNG_SNAPSHOTS,
 
-    #ifdef _WIN32
-        /* win32 */
-        #if defined(ANVIL_INCLUDE_WIN3264_WINDOW_SYSTEM_SUPPORT)
-            WINDOW_PLATFORM_SYSTEM,
-        #endif
+#ifdef _WIN32
+         /* win32 */
+#if defined(ANVIL_INCLUDE_WIN3264_WINDOW_SYSTEM_SUPPORT)
+         WINDOW_PLATFORM_SYSTEM,
+#endif
 
-    #else
-        #if defined(ANVIL_INCLUDE_XCB_WINDOW_SYSTEM_SUPPORT)
-            /* linux xcb */
-            WINDOW_PLATFORM_XCB,
-        #endif
+#else
+#if defined(ANVIL_INCLUDE_XCB_WINDOW_SYSTEM_SUPPORT)
+         /* linux xcb */
+         WINDOW_PLATFORM_XCB,
+#endif
 
-        /* linux xlib */
-        WINDOW_PLATFORM_XLIB,
+         /* linux xlib */
+         WINDOW_PLATFORM_XLIB,
 
-        /* linux xlib */
-        WINDOW_PLATFORM_WAYLAND,
-    #endif
+         /* linux xlib */
+         WINDOW_PLATFORM_WAYLAND,
+#endif
 
-        /* Always last */
-        WINDOW_PLATFORM_COUNT,
-        WINDOW_PLATFORM_UNKNOWN = WINDOW_PLATFORM_COUNT
+         /* Always last */
+         WINDOW_PLATFORM_COUNT,
+         WINDOW_PLATFORM_UNKNOWN = WINDOW_PLATFORM_COUNT
     };
 
     class Window : public CallbacksSupportProvider
@@ -118,11 +136,11 @@ namespace Anvil
          *                                  Must not be nullptr.
          *
          **/
-        Window(const std::string&      in_title,
-               unsigned int            in_width,
-               unsigned int            in_height,
-               bool                    in_closable,
-               PresentCallbackFunction in_present_callback_func);
+        Window(const std::string& in_title,
+            unsigned int            in_width,
+            unsigned int            in_height,
+            bool                    in_closable,
+            PresentCallbackFunction in_present_callback_func);
 
         virtual ~Window();
 

@@ -30,42 +30,44 @@
 #include "config.h"
 
 #ifdef _WIN32
-    #include <windows.h>
+#include <windows.h>
 #else
-    #if defined(ANVIL_INCLUDE_XCB_WINDOW_SYSTEM_SUPPORT)
-        #include <X11/keysym.h>
-        #include <xcb/xcb.h>
-        #include <xcb/xcb_keysyms.h>
-    #endif
+#if defined(ANVIL_INCLUDE_XCB_WINDOW_SYSTEM_SUPPORT)
+#include <X11/keysym.h>
+#include <xcb/xcb.h>
+#include <xcb/xcb_keysyms.h>
+#endif
 #endif
 
 namespace Anvil
 {
     /* Keyboard character IDs */
-    #ifdef _WIN32
-        #define ANVIL_KEY_HELPER(key) VK_##key
-    #else
-        #define ANVIL_KEY_HELPER(key) XK_##key
-    #endif
+#ifdef _WIN32
+#define ANVIL_KEY_HELPER(key) VK_##key
+#else
+#define ANVIL_KEY_HELPER(key) XK_##key
+#endif
 
     typedef enum
     {
 #ifdef _WIN32
-        #if defined(ANVIL_INCLUDE_WIN3264_WINDOW_SYSTEM_SUPPORT)
-            KEY_ID_ESCAPE = ANVIL_KEY_HELPER(ESCAPE),
-            KEY_ID_LEFT   = ANVIL_KEY_HELPER(LEFT),
-            KEY_ID_RETURN = ANVIL_KEY_HELPER(RETURN),
-            KEY_ID_RIGHT  = ANVIL_KEY_HELPER(RIGHT),
-            KEY_ID_SPACE  = ANVIL_KEY_HELPER(SPACE),
-        #endif
+#if defined(ANVIL_INCLUDE_WIN3264_WINDOW_SYSTEM_SUPPORT)
+        KEY_ID_ESCAPE = ANVIL_KEY_HELPER(ESCAPE),
+        KEY_ID_UP = 87,
+        KEY_ID_DOWN = 83,
+        KEY_ID_LEFT = 65,
+        KEY_ID_RIGHT = 68,
+        KEY_ID_SPACE = ANVIL_KEY_HELPER(SPACE),
+        KEY_ID_RETURN = ANVIL_KEY_HELPER(RETURN),
+#endif
 #else
-        #if defined(ANVIL_INCLUDE_XCB_WINDOW_SYSTEM_SUPPORT)
-            KEY_ID_ESCAPE = ANVIL_KEY_HELPER(Escape),
-            KEY_ID_LEFT   = ANVIL_KEY_HELPER(Left),
-            KEY_ID_RETURN = ANVIL_KEY_HELPER(Return),
-            KEY_ID_RIGHT  = ANVIL_KEY_HELPER(Right),
-            KEY_ID_SPACE  = ANVIL_KEY_HELPER(space),
-        #endif
+#if defined(ANVIL_INCLUDE_XCB_WINDOW_SYSTEM_SUPPORT)
+        KEY_ID_ESCAPE = ANVIL_KEY_HELPER(Escape),
+        KEY_ID_LEFT = ANVIL_KEY_HELPER(Left),
+        KEY_ID_RETURN = ANVIL_KEY_HELPER(Return),
+        KEY_ID_RIGHT = ANVIL_KEY_HELPER(m_right),
+        KEY_ID_SPACE = ANVIL_KEY_HELPER(space),
+#endif
 
 #endif
         KEY_ID_COUNT,
@@ -92,9 +94,9 @@ namespace Anvil
         static bool delete_file(std::string in_filename);
 
         /** Enumerates files under user-specified directory. */
-        static bool enumerate_files_in_directory(const std::string&        in_path,
-                                                 bool                      in_recursive,
-                                                 std::vector<std::string>* out_result_ptr);
+        static bool enumerate_files_in_directory(const std::string& in_path,
+            bool                      in_recursive,
+            std::vector<std::string>* out_result_ptr);
 
         /** Tells whether the specified path exists and is a directory. */
         static bool is_directory(const std::string& in_path);
@@ -114,16 +116,16 @@ namespace Anvil
          *          with delete[], when no longer needed.
          **/
         static bool read_file(std::string in_filename,
-                              bool        in_is_text_file,
-                              char**      out_opt_result_ptr,
-                              size_t*     out_opt_size_ptr);
+            bool        in_is_text_file,
+            char** out_opt_result_ptr,
+            size_t* out_opt_size_ptr);
 
         /* TODO */
         static bool read_file(std::string in_filename,
-                              bool        in_is_text_file,
-                              size_t      in_start_offset,
-                              size_t      in_size,
-                              char**      out_result_ptr);
+            bool        in_is_text_file,
+            size_t      in_start_offset,
+            size_t      in_size,
+            char** out_result_ptr);
 
         /** Writes specified data to a file under specified location. If a file exists under
          *  given location, its contents is discarded.
@@ -137,12 +139,12 @@ namespace Anvil
          *                          false to purge existing contents (if any).
          **/
         static bool write_binary_file(std::string  in_filename,
-                                      const void*  in_data,
-                                      unsigned int in_data_size,
-                                      bool         in_should_append = false);
-        static bool write_text_file  (std::string  in_filename,
-                                      std::string  in_contents,
-                                      bool         in_should_append = false);
+            const void* in_data,
+            unsigned int in_data_size,
+            bool         in_should_append = false);
+        static bool write_text_file(std::string  in_filename,
+            std::string  in_contents,
+            bool         in_should_append = false);
     };
 }
 

@@ -50,6 +50,11 @@ Engine::Engine()
 
 void Engine::init()
 {
+    m_camera = make_shared<Camera>(vec3(0.0f, 0.0f, 3.0f));
+    m_camera->SetAsActive();//¼¤»î
+    m_key = make_shared<Key>();
+    
+    
     init_vulkan();
     init_window();
     init_swapchain();
@@ -68,6 +73,8 @@ void Engine::init()
     init_command_buffers();
 
     init_semaphores();
+
+
 }
 
 void Engine::init_vulkan()
@@ -109,25 +116,55 @@ void Engine::init_vulkan()
 void Engine::init_window()
 {
 #ifdef ENABLE_OFFSCREEN_RENDERING
-    const Anvil::WindowPlatform platform = Anvil::WINDOW_PLATFORM_DUMMY_WITH_PNG_SNAPSHOTS;
+    const WindowPlatform platform = WINDOW_PLATFORM_DUMMY_WITH_PNG_SNAPSHOTS;
 #else
 #ifdef _WIN32
-    const Anvil::WindowPlatform platform = Anvil::WINDOW_PLATFORM_SYSTEM;
+    const WindowPlatform platform = WINDOW_PLATFORM_SYSTEM;
 #else
-    const Anvil::WindowPlatform platform = Anvil::WINDOW_PLATFORM_XCB;
+    const WindowPlatform platform = WINDOW_PLATFORM_XCB;
 #endif
 #endif
 
     /* Create a window */
-    m_window_ptr = Anvil::WindowFactory::create_window(
+    m_window_ptr = WindowFactory::create_window(
         platform,
         APP_NAME,
         1280,
         720,
         true, /* in_closable */
-        std::bind(
-            &Engine::draw_frame,
-            this)
+        bind(&Engine::draw_frame, this)
+    );
+
+    m_window_ptr->register_for_callbacks(
+        WINDOW_CALLBACK_ID_MOUSE_MOVE,
+        bind(&Engine::mouse_callback,
+            this,
+            placeholders::_1),
+        this
+    );
+    
+    m_window_ptr->register_for_callbacks(
+        WINDOW_CALLBACK_ID_MOUSE_WHEEL,
+        bind(&Engine::scroll_callback,
+            this,
+            placeholders::_1),
+        this
+    );
+
+    m_window_ptr->register_for_callbacks(
+        WINDOW_CALLBACK_ID_KEY_PRESS,
+        bind(&Engine::key_press_callback,
+            this,
+            placeholders::_1),
+        this
+    );
+
+    m_window_ptr->register_for_callbacks(
+        WINDOW_CALLBACK_ID_KEY_RELEASE,
+        bind(&Engine::key_release_callback,
+            this,
+            placeholders::_1),
+        this
     );
 }
 
@@ -688,18 +725,27 @@ void Engine::draw_frame()
 /** Updates the buffer memory, which holds position, rotation and size data for all triangles. */
 void Engine::update_data_ub_contents(uint32_t in_n_swapchain_image)
 {
-    static auto startTime = std::chrono::high_resolution_clock::now();
+    static auto startTime = chrono::high_resolution_clock::now();
 
-    auto currentTime = std::chrono::high_resolution_clock::now();
-    float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+    auto currentTime = chrono::high_resolution_clock::now();
+    float time = chrono::duration<float, chrono::seconds::period>(currentTime - startTime).count();
+
+
+    if (m_key->IsPressed(KeyID::KEY_ID_UP))
+        m_camera->ProcessKeyboard(FORWARD, time);
+    if (m_key->IsPressed(KeyID::KEY_ID_DOWN))
+        m_camera->ProcessKeyboard(BACKWARD, time);
+    if (m_key->IsPressed(KeyID::KEY_ID_LEFT))
+        m_camera->ProcessKeyboard(LEFT, time);
+    if (m_key->IsPressed(KeyID::KEY_ID_RIGHT))
+        m_camera->ProcessKeyboard(RIGHT, time);
 
     MVP mvp = {};
     mvp.model =
         rotate(mat4(1.0f), time * radians(30.0f), vec3(0.0f, 1.0f, 0.0f))
         * scale(mat4(1.0f), vec3(0.015f, 0.015f, 0.015f));
-    mvp.view = lookAt(vec3(2.0f, -1.0f, 2.0f), vec3(0.0f, 1.0f, 0.0f), vec3(0.0f, 1.0f, 0.0f));
-    mvp.proj = perspective(radians(45.0f), WINDOW_WIDTH / (float)WINDOW_HEIGHT, 0.1f, 10.0f);
-    mvp.proj[1][1] *= -1;
+    mvp.view = Camera::Active()->GetViewMatrix();
+    mvp.proj = Camera::Active()->GetProjMatrix();
 
     m_uniform_buffer_ptr->write(
         in_n_swapchain_image * m_ub_data_size_per_swapchain_image, /* start_offset */
@@ -707,6 +753,51 @@ void Engine::update_data_ub_contents(uint32_t in_n_swapchain_image)
         &mvp,
         m_device_ptr->get_universal_queue(0));
 
+}
+
+void Engine::mouse_callback(CallbackArgument* argumentPtr)
+{
+    double mouse_x_pos = reinterpret_cast<OnMouseMoveCallbackArgument*>(argumentPtr)->mouse_x_pos;
+    double mouse_y_pos = reinterpret_cast<OnMouseMoveCallbackArgument*>(argumentPtr)->mouse_y_pos;
+
+    static double lastX = mouse_x_pos;
+    static double lastY = mouse_y_pos;
+
+    if (mouse_x_pos > WINDOW_WIDTH * 0.8 || mouse_x_pos < WINDOW_WIDTH * 0.2 ||
+        mouse_y_pos > WINDOW_HEIGHT * 0.8 || mouse_y_pos < WINDOW_HEIGHT * 0.2)
+    {
+        SetCursorPos(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+        lastX = WINDOW_WIDTH / 2;
+        lastY = WINDOW_HEIGHT / 2;
+        return;
+    }
+
+
+    float x_offset = mouse_x_pos - lastX;
+    float y_offset = lastY - mouse_y_pos;
+
+    lastX = mouse_x_pos;
+    lastY = mouse_y_pos;
+
+    Camera::Active()->ProcessMouseMovement(x_offset, y_offset);
+
+
+
+}
+
+void Engine::scroll_callback(CallbackArgument* argumentPtr)
+{
+    Camera::Active()->ProcessMouseScroll(reinterpret_cast<OnMouseWheelCallbackArgument*>(argumentPtr)->wheel_offset/120.0);
+}
+
+void Engine::key_press_callback(CallbackArgument* argumentPtr)
+{
+    m_key->SetPressed(reinterpret_cast<OnKeyCallbackArgument*>(argumentPtr)->key_id);
+}
+
+void Engine::key_release_callback(CallbackArgument* argumentPtr)
+{
+    m_key->SetReleased(reinterpret_cast<OnKeyCallbackArgument*>(argumentPtr)->key_id);
 }
 #pragma endregion
 

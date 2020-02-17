@@ -19,7 +19,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 //
-    
+
 /** Defines & implements a simple callback manager which lets:
  *
  *  - clients sign up to any of the exposed callback slots at any time.
@@ -36,7 +36,7 @@
 #include "misc/types.h"
 
 #ifndef _WIN32
-    #include <unistd.h>
+#include <unistd.h>
 #endif
 
 #include <algorithm>
@@ -51,7 +51,7 @@ namespace Anvil
      *
      *  @param in_callback_arg Call-back specific argument.
      **/
-    typedef std::function< void(CallbackArgument* in_callback_arg) > CallbackFunction;
+    typedef std::function< void(CallbackArgument * in_callback_arg) > CallbackFunction;
 
     /* Defines the callback ID type.
      *
@@ -77,7 +77,7 @@ namespace Anvil
 
         explicit IsBufferMemoryAllocPendingQueryCallbackArgument(const Anvil::Buffer* in_buffer_ptr)
             :buffer_ptr(in_buffer_ptr),
-             result    (false)
+            result(false)
         {
             /* Stub */
         }
@@ -89,7 +89,7 @@ namespace Anvil
     {
         explicit IsImageMemoryAllocPendingQueryCallbackArgument(const Anvil::Image* in_image_ptr)
             :image_ptr(in_image_ptr),
-             result   (false)
+            result(false)
         {
             /* Stub */
         }
@@ -122,24 +122,43 @@ namespace Anvil
 
     typedef OnGLSLToSPIRVConversionAboutToBeStartedCallbackArgument OnGLSLToSPIRVConversionFinishedCallbackArgument;
 
-    typedef struct OnKeypressReleasedCallbackArgument : public Anvil::CallbackArgument
-    {
-        KeyID         released_key_id;
-        const Window* window_ptr;
 
-        /** Constructor.
-         *
-         *  @param in_command_buffer_ptr  Command buffer instance the command is being recorded for.
-         *  @param in_command_details_ptr Structure holding all arguments to be passed to the vkCmdBeginRenderPass() call.
-         **/
-        explicit OnKeypressReleasedCallbackArgument(Window* in_window_ptr,
-                                                    KeyID   in_released_key_id)
-            :released_key_id(in_released_key_id),
-             window_ptr     (in_window_ptr)
+
+    typedef struct OnMouseMoveCallbackArgument : public Anvil::CallbackArgument
+    {
+        double mouse_x_pos;
+        double mouse_y_pos;
+
+        explicit OnMouseMoveCallbackArgument(double in_mouse_x_pos, double in_mouse_y_pos)
+            :mouse_x_pos(in_mouse_x_pos), mouse_y_pos(in_mouse_y_pos)
         {
             /* Stub */
         }
-    } OnKeypressReleasedCallbackArgument;
+    } OnMouseMoveCallbackArgument;
+
+    typedef struct OnMouseWheelCallbackArgument : public Anvil::CallbackArgument
+    {
+        short wheel_offset;
+
+        explicit OnMouseWheelCallbackArgument(short in_wheel_offset)
+            :wheel_offset(in_wheel_offset)
+        {
+            /* Stub */
+        }
+    } OnMouseWheelCallbackArgument;
+
+    typedef struct OnKeyCallbackArgument : public Anvil::CallbackArgument
+    {
+        KeyID         key_id;
+
+        explicit OnKeyCallbackArgument(KeyID   in_key_id)
+            :key_id(in_key_id)
+        {
+            /* Stub */
+        }
+    } OnKeyCallbackArgument;
+
+
 
     typedef struct OnMemoryBlockNeededForBufferCallbackArgument : public Anvil::CallbackArgument
     {
@@ -189,16 +208,16 @@ namespace Anvil
 
     typedef struct OnObjectRegisteredCallbackArgument : Anvil::CallbackArgument
     {
-        void*      object_raw_ptr;
+        void* object_raw_ptr;
         ObjectType object_type;
 
         explicit OnObjectRegisteredCallbackArgument(const ObjectType& in_object_type,
-                                                    void*             in_object_raw_ptr)
+            void* in_object_raw_ptr)
         {
             anvil_assert(in_object_raw_ptr != nullptr);
 
             object_raw_ptr = in_object_raw_ptr;
-            object_type    = in_object_type;
+            object_type = in_object_type;
         }
     } OnObjectRegisteredCallbackArgument;
 
@@ -206,7 +225,7 @@ namespace Anvil
 
     typedef struct OnPipelineBarrierCommandRecordedCallbackData : public Anvil::CallbackArgument
     {
-        CommandBufferBase*            command_buffer_ptr;
+        CommandBufferBase* command_buffer_ptr;
         const PipelineBarrierCommand* command_details_ptr;
 
         /** Constructor.
@@ -214,10 +233,10 @@ namespace Anvil
          *  @param in_command_buffer_ptr  Command buffer instance the command is being recorded for.
          *  @param in_command_details_ptr Structure holding all arguments to be passed to the vkCmdPipelineBarrier() call.
          **/
-        explicit OnPipelineBarrierCommandRecordedCallbackData(CommandBufferBase*            in_command_buffer_ptr,
-                                                              const PipelineBarrierCommand* in_command_details_ptr)
-            :command_buffer_ptr (in_command_buffer_ptr),
-             command_details_ptr(in_command_details_ptr) 
+        explicit OnPipelineBarrierCommandRecordedCallbackData(CommandBufferBase* in_command_buffer_ptr,
+            const PipelineBarrierCommand* in_command_details_ptr)
+            :command_buffer_ptr(in_command_buffer_ptr),
+            command_details_ptr(in_command_details_ptr)
         {
             /* Stub */
         }
@@ -259,15 +278,15 @@ namespace Anvil
      **/
     class ICallbacksSupportClient
     {
-        virtual bool is_callback_registered   (CallbackID       in_callback_id,
-                                               CallbackFunction in_callback_function,
-                                               void*            in_callback_function_owner_ptr) const = 0;
-        virtual void register_for_callbacks   (CallbackID       in_callback_id,
-                                               CallbackFunction in_callback_function,
-                                               void*            in_callback_function_owner_ptr)       = 0;
+        virtual bool is_callback_registered(CallbackID       in_callback_id,
+            CallbackFunction in_callback_function,
+            void* in_callback_function_owner_ptr) const = 0;
+        virtual void register_for_callbacks(CallbackID       in_callback_id,
+            CallbackFunction in_callback_function,
+            void* in_callback_function_owner_ptr) = 0;
         virtual void unregister_from_callbacks(CallbackID       in_callback_id,
-                                               CallbackFunction in_callback_function,
-                                               void*            in_callback_function_owner_ptr)       = 0;
+            CallbackFunction in_callback_function,
+            void* in_callback_function_owner_ptr) = 0;
     };
 
 
@@ -290,8 +309,8 @@ namespace Anvil
             anvil_assert(in_callback_id_count > 0);
 
             m_callback_id_count = in_callback_id_count;
-            m_callbacks         = new Callbacks[static_cast<uintptr_t>(in_callback_id_count)];
-            m_callbacks_locked  = false;
+            m_callbacks = new Callbacks[static_cast<uintptr_t>(in_callback_id_count)];
+            m_callbacks_locked = false;
         }
 
         /** Destructor.
@@ -301,7 +320,7 @@ namespace Anvil
          **/
         virtual ~CallbacksSupportProvider()
         {
-            delete [] m_callbacks;
+            delete[] m_callbacks;
 
             m_callbacks = nullptr;
         }
@@ -319,17 +338,17 @@ namespace Anvil
          *         false otherwise.
          */
         bool is_callback_registered(CallbackID       in_callback_id,
-                                    CallbackFunction in_callback_function,
-                                    void*            in_callback_function_owner_ptr) const
+            CallbackFunction in_callback_function,
+            void* in_callback_function_owner_ptr) const
         {
             std::unique_lock<std::recursive_mutex> mutex_lock(m_mutex);
 
             anvil_assert(in_callback_id < m_callback_id_count);
 
             return std::find(m_callbacks[in_callback_id].begin(),
-                             m_callbacks[in_callback_id].end(),
-                             Callback(in_callback_function,
-                                      in_callback_function_owner_ptr) ) != m_callbacks[in_callback_id].end();
+                m_callbacks[in_callback_id].end(),
+                Callback(in_callback_function,
+                    in_callback_function_owner_ptr)) != m_callbacks[in_callback_id].end();
         }
 
         /** Registers a new call-back client.
@@ -347,27 +366,27 @@ namespace Anvil
          *
          **/
         void register_for_callbacks(CallbackID       in_callback_id,
-                                    CallbackFunction in_callback_function,
-                                    void*            in_callback_owner_ptr)
+            CallbackFunction in_callback_function,
+            void* in_callback_owner_ptr)
         {
             std::unique_lock<std::recursive_mutex> mutex_lock(m_mutex);
 
-            anvil_assert(in_callback_id        <  m_callback_id_count);
-            anvil_assert(in_callback_function  != nullptr);
+            anvil_assert(in_callback_id < m_callback_id_count);
+            anvil_assert(in_callback_function != nullptr);
             anvil_assert(in_callback_owner_ptr != nullptr);
             anvil_assert(!m_callbacks_locked);
 
-            #ifdef _DEBUG
+#ifdef _DEBUG
             {
                 anvil_assert(!is_callback_registered(in_callback_id,
-                                                     in_callback_function,
-                                                     in_callback_owner_ptr) );
+                    in_callback_function,
+                    in_callback_owner_ptr));
             }
-            #endif
+#endif
 
             m_callbacks[in_callback_id].push_back(
                 Callback(in_callback_function,
-                         in_callback_owner_ptr)
+                    in_callback_owner_ptr)
             );
         }
 
@@ -385,22 +404,22 @@ namespace Anvil
          *
          **/
         void unregister_from_callbacks(CallbackID       in_callback_id,
-                                       CallbackFunction in_callback_function,
-                                       void*            in_callback_function_owner_ptr)
+            CallbackFunction in_callback_function,
+            void* in_callback_function_owner_ptr)
         {
             std::unique_lock<std::recursive_mutex> mutex_lock(m_mutex);
 
-            anvil_assert(in_callback_id       <  m_callback_id_count);
+            anvil_assert(in_callback_id < m_callback_id_count);
             anvil_assert(in_callback_function != nullptr);
             anvil_assert(!m_callbacks_locked);
 
             auto callback_iterator = std::find(m_callbacks[in_callback_id].begin(),
-                                               m_callbacks[in_callback_id].end(),
-                                               Callback(in_callback_function,
-                                                        in_callback_function_owner_ptr) );
+                m_callbacks[in_callback_id].end(),
+                Callback(in_callback_function,
+                    in_callback_function_owner_ptr));
 
-            anvil_assert(callback_iterator != m_callbacks[in_callback_id].end() );
-            if (callback_iterator != m_callbacks[in_callback_id].end() )
+            anvil_assert(callback_iterator != m_callbacks[in_callback_id].end());
+            if (callback_iterator != m_callbacks[in_callback_id].end())
             {
                 m_callbacks[in_callback_id].erase(callback_iterator);
             }
@@ -421,7 +440,7 @@ namespace Anvil
          *  @param in_callback_arg_ptr Call-back argument to use.
          **/
         void callback(CallbackID        in_callback_id,
-                      CallbackArgument* in_callback_arg_ptr) const
+            CallbackArgument* in_callback_arg_ptr) const
         {
             std::unique_lock<std::recursive_mutex> mutex_lock(m_mutex);
 
@@ -430,9 +449,9 @@ namespace Anvil
 
             m_callbacks_locked = true;
             {
-                for (auto callback_iterator  = m_callbacks[in_callback_id].begin();
-                          callback_iterator != m_callbacks[in_callback_id].end();
-                        ++callback_iterator)
+                for (auto callback_iterator = m_callbacks[in_callback_id].begin();
+                    callback_iterator != m_callbacks[in_callback_id].end();
+                    ++callback_iterator)
                 {
                     const auto& current_callback = *callback_iterator;
 
@@ -461,7 +480,7 @@ namespace Anvil
          *  @param in_callback_arg Call-back argument to use.
          **/
         void callback_safe(CallbackID        in_callback_id,
-                           CallbackArgument* in_callback_arg_ptr)
+            CallbackArgument* in_callback_arg_ptr)
         {
             std::unique_lock<std::recursive_mutex> mutex_lock(m_mutex);
 
@@ -469,26 +488,26 @@ namespace Anvil
             anvil_assert(!m_callbacks_locked);
 
             bool                  another_iteration_needed = true;
-            bool                  first_iteration          = true;
+            bool                  first_iteration = true;
             std::vector<Callback> invoked_callbacks;
 
-            while (another_iteration_needed                &&
-                   m_callbacks[in_callback_id].size() > 0)
+            while (another_iteration_needed &&
+                m_callbacks[in_callback_id].size() > 0)
             {
                 const std::vector<Callback> cached_callbacks = m_callbacks[in_callback_id];
 
                 another_iteration_needed = false;
 
                 for (uint32_t n_current_callback = 0;
-                              n_current_callback < static_cast<uint32_t>(cached_callbacks.size() );
-                            ++n_current_callback)
+                    n_current_callback < static_cast<uint32_t>(cached_callbacks.size());
+                    ++n_current_callback)
                 {
                     const auto& current_callback = cached_callbacks[n_current_callback];
 
-                    if (first_iteration                                        ||
+                    if (first_iteration ||
                         std::find(invoked_callbacks.begin(),
-                                  invoked_callbacks.end(),
-                                  current_callback) == invoked_callbacks.end() )
+                            invoked_callbacks.end(),
+                            current_callback) == invoked_callbacks.end())
                     {
                         current_callback.function(in_callback_arg_ptr);
 
@@ -497,7 +516,7 @@ namespace Anvil
                 }
 
                 /* Has m_callbacks[in_callback_id] changed as a result of the callback above? */
-                if (!(m_callbacks[in_callback_id] == invoked_callbacks) )
+                if (!(m_callbacks[in_callback_id] == invoked_callbacks))
                 {
                     another_iteration_needed = true;
                 }
@@ -515,7 +534,7 @@ namespace Anvil
             {
                 std::unique_lock<std::recursive_mutex> mutex_lock(m_mutex);
 
-                result = static_cast<uint32_t>(m_callbacks[in_callback_id].size() );
+                result = static_cast<uint32_t>(m_callbacks[in_callback_id].size());
             }
 
             return result;
@@ -526,26 +545,26 @@ namespace Anvil
         typedef struct Callback
         {
             CallbackFunction function;
-            void*            magic;
+            void* magic;
 
             explicit Callback(CallbackFunction in_function,
-                              void*            in_magic)
+                void* in_magic)
             {
                 function = in_function;
-                magic    = in_magic;
+                magic = in_magic;
             }
 
             bool operator==(const Callback& in_callback) const
             {
                 const auto& this_target_type = function.target_type();
-                const auto& this_target      = function.target<void(*)(void*)> ();
+                const auto& this_target = function.target<void(*)(void*)>();
 
-                const auto& in_target_type   = in_callback.function.target_type();
-                const auto& in_target        = in_callback.function.target<void(*)(void*)> ();
+                const auto& in_target_type = in_callback.function.target_type();
+                const auto& in_target = in_callback.function.target<void(*)(void*)>();
 
-                return (this_target_type == in_target_type       &&
-                        this_target      == in_target            &&
-                        magic            == in_callback.magic);
+                return (this_target_type == in_target_type &&
+                    this_target == in_target &&
+                    magic == in_callback.magic);
             }
         } Callback;
 
@@ -553,7 +572,7 @@ namespace Anvil
 
         /* Private variables */
         CallbackID                   m_callback_id_count;
-        Callbacks*                   m_callbacks;
+        Callbacks* m_callbacks;
         mutable volatile bool        m_callbacks_locked;
         mutable std::recursive_mutex m_mutex;
     };

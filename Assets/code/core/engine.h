@@ -1,5 +1,7 @@
 #pragma once
 #include "stdafx.h"
+#include "../scene/camera.h"
+#include "../support/keys.h"
 #include "../scene/model.h"
 #define N_SWAPCHAIN_IMAGES (3)
 class Engine
@@ -25,8 +27,14 @@ private:
 
     void init();
     void init_vulkan();
+
     void on_validation_callback(Anvil::DebugMessageSeverityFlags in_severity,
         const char* in_message_ptr);
+    void mouse_callback(CallbackArgument* argumentPtr);
+    void scroll_callback(CallbackArgument* argumentPtr);
+    void key_press_callback(CallbackArgument* argumentPtr);
+    void key_release_callback(CallbackArgument* argumentPtr);
+
     void init_window         ();
     void init_swapchain      ();
 
@@ -55,6 +63,8 @@ private:
 
 
     shared_ptr<Model> m_model;
+    shared_ptr<Camera> m_camera;
+    shared_ptr<Key> m_key;
 
 
     Anvil::BaseDeviceUniquePtr       m_device_ptr;

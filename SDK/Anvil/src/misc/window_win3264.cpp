@@ -27,56 +27,56 @@
 
 
 /* See create() for documentation */
-Anvil::WindowWin3264::WindowWin3264(const std::string&             in_title,
-                                    unsigned int                   in_width,
-                                    unsigned int                   in_height,
-                                    bool                           in_closable,
-                                    Anvil::PresentCallbackFunction in_present_callback_func)
+Anvil::WindowWin3264::WindowWin3264(const std::string& in_title,
+    unsigned int                   in_width,
+    unsigned int                   in_height,
+    bool                           in_closable,
+    Anvil::PresentCallbackFunction in_present_callback_func)
     :Window(in_title,
-            in_width,
-            in_height,
-            in_closable,
-            in_present_callback_func)
+        in_width,
+        in_height,
+        in_closable,
+        in_present_callback_func)
 {
     m_window_owned = true;
 }
 
 /* See create() for documentation */
 Anvil::WindowWin3264::WindowWin3264(HWND                           in_handle,
-                                    const std::string&             in_title,
-                                    unsigned int                   in_width,
-                                    unsigned int                   in_height,
-                                    Anvil::PresentCallbackFunction in_present_callback_func)
+    const std::string& in_title,
+    unsigned int                   in_width,
+    unsigned int                   in_height,
+    Anvil::PresentCallbackFunction in_present_callback_func)
     :Window(in_title,
-            in_width,
-            in_height,
-            true, /* in_closable */
-            in_present_callback_func)
+        in_width,
+        in_height,
+        true, /* in_closable */
+        in_present_callback_func)
 {
-    m_window       = in_handle;
+    m_window = in_handle;
     m_window_owned = false;
 }
 
 /** Please see header for specification */
-Anvil::WindowUniquePtr Anvil::WindowWin3264::create(const std::string&             in_title,
-                                                    unsigned int                   in_width,
-                                                    unsigned int                   in_height,
-                                                    bool                           in_closable,
-                                                    Anvil::PresentCallbackFunction in_present_callback_func,
-                                                    bool                           in_visible)
+Anvil::WindowUniquePtr Anvil::WindowWin3264::create(const std::string& in_title,
+    unsigned int                   in_width,
+    unsigned int                   in_height,
+    bool                           in_closable,
+    Anvil::PresentCallbackFunction in_present_callback_func,
+    bool                           in_visible)
 {
     WindowUniquePtr result_ptr(
         new Anvil::WindowWin3264(in_title,
-                                 in_width,
-                                 in_height,
-                                 in_closable,
-                                 in_present_callback_func),
+            in_width,
+            in_height,
+            in_closable,
+            in_present_callback_func),
         std::default_delete<Anvil::Window>()
     );
 
     if (result_ptr)
     {
-        if (!dynamic_cast<WindowWin3264*>(result_ptr.get() )->init(in_visible) )
+        if (!dynamic_cast<WindowWin3264*>(result_ptr.get())->init(in_visible))
         {
             result_ptr.reset();
         }
@@ -88,10 +88,10 @@ Anvil::WindowUniquePtr Anvil::WindowWin3264::create(const std::string&          
 /** Please see header for specification */
 Anvil::WindowUniquePtr Anvil::WindowWin3264::create(HWND in_window_handle)
 {
-    WindowUniquePtr result_ptr (nullptr,
-                                std::default_delete<Window>() );
+    WindowUniquePtr result_ptr(nullptr,
+        std::default_delete<Window>());
     RECT            window_rect;
-    uint32_t        window_size[2] = {0};
+    uint32_t        window_size[2] = { 0 };
 
     /* The window has already been spawned by the user. Gather all the info we need in order to instantiate
      * the wrapper instance.
@@ -104,28 +104,28 @@ Anvil::WindowUniquePtr Anvil::WindowWin3264::create(HWND in_window_handle)
     }
 
     if (::GetClientRect(in_window_handle,
-                       &window_rect) == 0)
+        &window_rect) == 0)
     {
         anvil_assert_fail();
 
         goto end;
     }
 
-    window_size[0] = static_cast<uint32_t>(window_rect.right  - window_rect.left);
+    window_size[0] = static_cast<uint32_t>(window_rect.right - window_rect.left);
     window_size[1] = static_cast<uint32_t>(window_rect.bottom - window_rect.top);
 
     /* Go ahead and create the window wrapper instance */
     result_ptr.reset(
         new Anvil::WindowWin3264(in_window_handle,
-                                 "HWND wrapper window instance",
-                                 window_size[0],
-                                 window_size[1],
-                                 nullptr) /* present_callback_func_ptr */
+            "HWND wrapper window instance",
+            window_size[0],
+            window_size[1],
+            nullptr) /* present_callback_func_ptr */
     );
 
     if (result_ptr)
     {
-        if (!dynamic_cast<WindowWin3264*>(result_ptr.get() )->init(::IsWindowVisible(in_window_handle) == TRUE))
+        if (!dynamic_cast<WindowWin3264*>(result_ptr.get())->init(::IsWindowVisible(in_window_handle) == TRUE))
         {
             result_ptr.reset();
         }
@@ -146,23 +146,23 @@ void Anvil::WindowWin3264::close()
 
         /* NOTE: When the call below leaves, the window is guaranteed to be gone */
         ::SendMessage(m_window,
-                      WM_DESTROY_WINDOW,
-                      0,  /* wParam */
-                      0); /* lParam */
+            WM_DESTROY_WINDOW,
+            0,  /* wParam */
+            0); /* lParam */
     }
 }
 
 /** Creates a new system window and prepares it for usage. */
 bool Anvil::WindowWin3264::init(const bool& in_visible)
 {
-    bool        result            = false;
+    bool        result = false;
     const char* window_class_name = (m_closable) ? "Anvil window (closable)"
-                                                 : "Anvil window (non-closable)";
+        : "Anvil window (non-closable)";
 
     if (m_window_owned)
     {
         std::stringstream class_name_sstream;
-        HINSTANCE         instance           = ::GetModuleHandle(nullptr);
+        HINSTANCE         instance = ::GetModuleHandle(nullptr);
         WNDCLASSEX        window_class;
         RECT              window_rect;
         const uint32_t    window_size[2] =
@@ -173,21 +173,22 @@ bool Anvil::WindowWin3264::init(const bool& in_visible)
 
 
         // Initialize the window class structure:
-        window_class.cbSize        = sizeof(WNDCLASSEX);
-        window_class.style         = CS_HREDRAW | CS_VREDRAW;
-        window_class.lpfnWndProc   = msg_callback_pfn_proc;
-        window_class.cbClsExtra    = 0;
-        window_class.cbWndExtra    = 0;
-        window_class.hbrBackground = static_cast<HBRUSH>(::GetStockObject(WHITE_BRUSH) );
-        window_class.hInstance     = instance;
-        window_class.hIcon         = ::LoadIcon  (nullptr,  /* hInstance */
-                                                  IDI_APPLICATION);
-        window_class.hCursor       = ::LoadCursor(nullptr,  /* hInstance */
-                                                  IDC_ARROW);
-        window_class.lpszMenuName  = nullptr;
+        window_class.cbSize = sizeof(WNDCLASSEX);
+        window_class.style = CS_HREDRAW | CS_VREDRAW;
+        window_class.lpfnWndProc = msg_callback_pfn_proc;
+        window_class.cbClsExtra = 0;
+        window_class.cbWndExtra = 0;
+        window_class.hbrBackground = static_cast<HBRUSH>(::GetStockObject(WHITE_BRUSH));
+        window_class.hInstance = instance;
+        window_class.hIcon = ::LoadIcon(nullptr,  /* hInstance */
+            IDI_APPLICATION);
+        window_class.hCursor = ::LoadCursor(nullptr,  /* hInstance */
+            IDC_ARROW);
+        ShowCursor(false); // “˛≤ÿ Û±Í÷∏’Î
+        window_class.lpszMenuName = nullptr;
         window_class.lpszClassName = window_class_name;
-        window_class.hIconSm       = ::LoadIcon(nullptr, /* hInstance */
-                                                IDI_WINLOGO);
+        window_class.hIconSm = ::LoadIcon(nullptr, /* hInstance */
+            IDI_WINLOGO);
 
         if (!m_closable)
         {
@@ -200,14 +201,14 @@ bool Anvil::WindowWin3264::init(const bool& in_visible)
         ::RegisterClassEx(&window_class);
 
         /* Create the window */
-        window_rect.left   = 0;
-        window_rect.top    = 0;
-        window_rect.right  = static_cast<LONG>(window_size[0]);
+        window_rect.left = 0;
+        window_rect.top = 0;
+        window_rect.right = static_cast<LONG>(window_size[0]);
         window_rect.bottom = static_cast<LONG>(window_size[1]);
 
         if (::AdjustWindowRect(&window_rect,
-                               WS_OVERLAPPEDWINDOW,
-                               FALSE /* bMenu */) == 0)
+            WS_OVERLAPPEDWINDOW,
+            FALSE /* bMenu */) == 0)
         {
             anvil_assert_fail();
 
@@ -218,17 +219,17 @@ bool Anvil::WindowWin3264::init(const bool& in_visible)
         const auto visibility_flag = (in_visible) ? WS_VISIBLE : 0;
 
         m_window = ::CreateWindowEx(0,                    /* dwExStyle */
-                                    window_class_name,
-                                    m_title.c_str(),
-                                    (WS_OVERLAPPEDWINDOW | visibility_flag | WS_SYSMENU) ^ WS_THICKFRAME,
-                                    0, /* X */
-                                    0, /* Y */
-                                    window_rect.right - window_rect.left,
-                                    window_rect.bottom - window_rect.top,
-                                    nullptr, /* hWndParent */
-                                    nullptr, /* hMenu */
-                                    instance,
-                                    nullptr); /* lParam */
+            window_class_name,
+            m_title.c_str(),
+            (WS_OVERLAPPEDWINDOW | visibility_flag | WS_SYSMENU) ^ WS_THICKFRAME,
+            0, /* X */
+            0, /* Y */
+            window_rect.right - window_rect.left,
+            window_rect.bottom - window_rect.top,
+            nullptr, /* hWndParent */
+            nullptr, /* hMenu */
+            instance,
+            nullptr); /* lParam */
 
         if (m_window == nullptr)
         {
@@ -242,9 +243,9 @@ bool Anvil::WindowWin3264::init(const bool& in_visible)
     ::SetLastError(0);
 
     if ((::SetWindowLongPtr(m_window,
-                            GWLP_USERDATA,
-                            reinterpret_cast<LONG_PTR>(this) ) == 0) &&
-        (::GetLastError    ()                                  != 0) )
+        GWLP_USERDATA,
+        reinterpret_cast<LONG_PTR>(this)) == 0) &&
+        (::GetLastError() != 0))
     {
         anvil_assert_fail();
 
@@ -266,15 +267,17 @@ end:
  *  @return Window message-specific return value.
  **/
 LRESULT CALLBACK Anvil::WindowWin3264::msg_callback_pfn_proc(HWND   in_window_handle,
-                                                             UINT   in_message_id,
-                                                             WPARAM in_param_wide,
-                                                             LPARAM in_param_long)
+    UINT   in_message_id,
+    WPARAM in_param_wide,
+    LPARAM in_param_long)
 {
     WindowWin3264* window_ptr = reinterpret_cast<WindowWin3264*>(::GetWindowLongPtr(in_window_handle,
-                                                                                    GWLP_USERDATA) );
+        GWLP_USERDATA));
 
-    switch (in_message_id)
+    if (window_ptr != nullptr)
     {
+        switch (in_message_id)
+        {
         case WM_DESTROY:
         {
             window_ptr->m_window_should_close = true;
@@ -290,20 +293,44 @@ LRESULT CALLBACK Anvil::WindowWin3264::msg_callback_pfn_proc(HWND   in_window_ha
             OnWindowAboutToCloseCallbackArgument callback_argument(window_ptr);
 
             window_ptr->callback(WINDOW_CALLBACK_ID_ABOUT_TO_CLOSE,
-                                &callback_argument);
+                &callback_argument);
 
             ::DestroyWindow(window_ptr->m_window);
 
             break;
         }
 
+        case WM_MOUSEMOVE:
+        {
+            OnMouseMoveCallbackArgument callback_data(LOWORD(in_param_long), HIWORD(in_param_long));
+
+            window_ptr->callback(WINDOW_CALLBACK_ID_MOUSE_MOVE, &callback_data);
+            return 0;
+        }
+
+        case WM_MOUSEWHEEL:
+        {
+            OnMouseWheelCallbackArgument callback_data((short)HIWORD(in_param_wide));
+
+            window_ptr->callback(WINDOW_CALLBACK_ID_MOUSE_WHEEL, &callback_data);
+
+            return 0;
+        }
+
+        case WM_KEYDOWN:
+        {
+            OnKeyCallbackArgument callback_data(static_cast<Anvil::KeyID>(LOWORD(in_param_wide) & 0xFF));
+
+            window_ptr->callback(WINDOW_CALLBACK_ID_KEY_PRESS, &callback_data);
+
+            return 0;
+        }
+
         case WM_KEYUP:
         {
-            OnKeypressReleasedCallbackArgument callback_data(window_ptr,
-                                                             static_cast<Anvil::KeyID>(LOWORD(in_param_wide) & 0xFF) );
+            OnKeyCallbackArgument callback_data(static_cast<Anvil::KeyID>(LOWORD(in_param_wide) & 0xFF));
 
-            window_ptr->callback(WINDOW_CALLBACK_ID_KEYPRESS_RELEASED,
-                                &callback_data);
+            window_ptr->callback(WINDOW_CALLBACK_ID_KEY_RELEASE, &callback_data);
 
             return 0;
         }
@@ -312,12 +339,14 @@ LRESULT CALLBACK Anvil::WindowWin3264::msg_callback_pfn_proc(HWND   in_window_ha
         {
             break;
         }
+        }
+
     }
 
     return DefWindowProc(in_window_handle,
-                         in_message_id,
-                         in_param_wide,
-                         in_param_long);
+        in_message_id,
+        in_param_wide,
+        in_param_long);
 }
 
 /* Please see header for specification */
@@ -334,10 +363,10 @@ void Anvil::WindowWin3264::run()
         MSG msg;
 
         while (::PeekMessage(&msg,
-                             nullptr,
-                             0,
-                             0,
-                             PM_REMOVE) )
+            nullptr,
+            0,
+            0,
+            PM_REMOVE))
         {
             if (msg.message == WM_QUIT)
             {
@@ -347,7 +376,7 @@ void Anvil::WindowWin3264::run()
             }
 
             ::TranslateMessage(&msg);
-            ::DispatchMessage (&msg);
+            ::DispatchMessage(&msg);
         }
 
         if (msg.message == WM_QUIT)
@@ -355,10 +384,10 @@ void Anvil::WindowWin3264::run()
             done = 1;
         }
         else
-        if (m_present_callback_func != nullptr)
-        {
-            m_present_callback_func();
-        }
+            if (m_present_callback_func != nullptr)
+            {
+                m_present_callback_func();
+            }
     }
 
     m_window_close_finished = true;
@@ -370,5 +399,5 @@ void Anvil::WindowWin3264::set_title(const std::string& in_new_title)
     anvil_assert(m_window_owned);
 
     ::SetWindowText(m_window,
-                    in_new_title.c_str() );
+        in_new_title.c_str());
 }
