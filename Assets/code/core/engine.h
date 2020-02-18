@@ -1,5 +1,7 @@
 #pragma once
 #include "stdafx.h"
+#include "../scene/camera.h"
+#include "../support/keys.h"
 #include "../scene/model.h"
 #define N_SWAPCHAIN_IMAGES (3)
 class Engine
@@ -18,6 +20,7 @@ public:
     BaseDevice* getDevice();
     PipelineLayout* getPineLine();
     DescriptorSetGroup* getDsg();
+    float getAspect();
 
     ~Engine();
 private:
@@ -25,8 +28,15 @@ private:
 
     void init();
     void init_vulkan();
+
     void on_validation_callback(Anvil::DebugMessageSeverityFlags in_severity,
         const char* in_message_ptr);
+    void mouse_callback(CallbackArgument* argumentPtr);
+    void scroll_callback(CallbackArgument* argumentPtr);
+    void key_press_callback(CallbackArgument* argumentPtr);
+    void key_release_callback(CallbackArgument* argumentPtr);
+    void recreate_swapchain();
+
     void init_window         ();
     void init_swapchain      ();
 
@@ -37,57 +47,65 @@ private:
     void init_shaders        ();
     void init_gfx_pipelines  ();
     
-    Anvil::Format SelectSupportedFormat(
-        const std::vector<Anvil::Format>& candidates,
-        Anvil::ImageTiling tiling,
-        Anvil::FormatFeatureFlags features);
+    Format SelectSupportedFormat(
+        const vector<Format>& candidates,
+        ImageTiling tiling,
+        FormatFeatureFlags features);
     void init_depth          ();
     void init_framebuffers   ();
     void init_command_buffers();
 
     void init_semaphores     ();
     void update_data_ub_contents(uint32_t in_n_swapchain_image);
-    void draw_frame            ();
+    void draw_frame          ();
 
+    void cleanup_swapwhain   ();
     void deinit              ();
 
     void init_events         ();
 
 
-    shared_ptr<Model> m_model;
+    shared_ptr<Model>         m_model;
+    shared_ptr<Camera>        m_camera;
+    shared_ptr<Key>           m_key;
 
 
-    Anvil::BaseDeviceUniquePtr       m_device_ptr;
-    Anvil::InstanceUniquePtr         m_instance_ptr;
-    const Anvil::PhysicalDevice*     m_physical_device_ptr;
-    Anvil::Queue*                    m_present_queue_ptr;
-    Anvil::RenderingSurfaceUniquePtr m_rendering_surface_ptr;
-    Anvil::SwapchainUniquePtr        m_swapchain_ptr;
-    VkDeviceSize                     m_ub_data_size_per_swapchain_image;
-    Anvil::WindowUniquePtr           m_window_ptr;
+    BaseDeviceUniquePtr       m_device_ptr;
+    InstanceUniquePtr         m_instance_ptr;
+    const PhysicalDevice*     m_physical_device_ptr;
+    Queue*                    m_present_queue_ptr;
+    RenderingSurfaceUniquePtr m_rendering_surface_ptr;
+    SwapchainUniquePtr        m_swapchain_ptr;
+    VkDeviceSize              m_ub_data_size_per_swapchain_image;
+    WindowUniquePtr           m_window_ptr;
 
-    Anvil::BufferUniquePtr                              m_uniform_buffer_ptr;
-    Anvil::DescriptorSetGroupUniquePtr                  m_dsg_ptr;
-
-
-    Anvil::RenderPassUniquePtr                          m_renderpass_ptr;
-    Anvil::SubPassID                                    m_render_pass_subpass_id;
-    std::unique_ptr<Anvil::ShaderModuleStageEntryPoint> m_vs_ptr;
-    std::unique_ptr<Anvil::ShaderModuleStageEntryPoint> m_fs_ptr;
-    Anvil::PipelineID                                   m_pipeline_id;
+    BufferUniquePtr                              m_uniform_buffer_ptr;
+    DescriptorSetGroupUniquePtr                  m_dsg_ptr;
 
 
-    Anvil::ImageUniquePtr                               m_depth_image_ptr;
-    Anvil::ImageViewUniquePtr                           m_depth_image_view_ptr;
-    Anvil::FramebufferUniquePtr                         m_fbos[N_SWAPCHAIN_IMAGES];
-    Anvil::PrimaryCommandBufferUniquePtr                m_command_buffers[N_SWAPCHAIN_IMAGES];
+    RenderPassUniquePtr                          m_renderpass_ptr;
+    SubPassID                                    m_render_pass_subpass_id;
+    unique_ptr<ShaderModuleStageEntryPoint>      m_vs_ptr;
+    unique_ptr<ShaderModuleStageEntryPoint>      m_fs_ptr;
+    PipelineID                                   m_pipeline_id;
+
+
+    ImageUniquePtr                               m_depth_image_ptr;
+    ImageViewUniquePtr                           m_depth_image_view_ptr;
+    FramebufferUniquePtr                         m_fbos[N_SWAPCHAIN_IMAGES];
+    PrimaryCommandBufferUniquePtr                m_command_buffers[N_SWAPCHAIN_IMAGES];
 
 
     uint32_t       m_n_last_semaphore_used;
     const uint32_t m_n_swapchain_images;
     uint32_t       m_mipLevels;
-    Anvil::Format  m_depth_format;
+    Format  m_depth_format;
 
-    std::vector<Anvil::SemaphoreUniquePtr> m_frame_signal_semaphores;
-    std::vector<Anvil::SemaphoreUniquePtr> m_frame_wait_semaphores;
+    vector<SemaphoreUniquePtr> m_frame_signal_semaphores;
+    vector<SemaphoreUniquePtr> m_frame_wait_semaphores;
+
+    int m_width;
+    int m_height;
+    bool m_is_full_screen;
+    RECT m_rect_before_full_screen;
 };

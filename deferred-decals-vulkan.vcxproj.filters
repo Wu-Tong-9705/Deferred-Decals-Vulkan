@@ -33,6 +33,15 @@
     <ClInclude Include="Assets\code\core\engine.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="Assets\code\scene\camera.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Assets\code\support\single_active.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Assets\code\support\keys.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Assets\code\stdafx.cpp">
@@ -54,6 +63,12 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="Assets\code\main.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Assets\code\scene\camera.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Assets\code\support\keys.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
