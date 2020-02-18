@@ -28,7 +28,7 @@ mat4 Camera::GetViewMatrix()
 
 mat4 Camera::GetProjMatrix()
 {
-	mat4 proj = perspective(radians(m_zoom), 1280.0f / 700.0f, 0.1f, 100.0f);
+	mat4 proj = perspective(radians(m_zoom), Engine::Instance()->getAspect(), 0.1f, 100.0f);
 	proj[1][1] *= -1;
 	return proj;
 }

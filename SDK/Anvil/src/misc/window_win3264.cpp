@@ -171,7 +171,6 @@ bool Anvil::WindowWin3264::init(const bool& in_visible)
             m_height
         };
 
-
         // Initialize the window class structure:
         window_class.cbSize = sizeof(WNDCLASSEX);
         window_class.style = CS_HREDRAW | CS_VREDRAW;
@@ -184,7 +183,6 @@ bool Anvil::WindowWin3264::init(const bool& in_visible)
             IDI_APPLICATION);
         window_class.hCursor = ::LoadCursor(nullptr,  /* hInstance */
             IDC_ARROW);
-        ShowCursor(false); // “˛≤ÿ Û±Í÷∏’Î
         window_class.lpszMenuName = nullptr;
         window_class.lpszClassName = window_class_name;
         window_class.hIconSm = ::LoadIcon(nullptr, /* hInstance */
@@ -218,10 +216,11 @@ bool Anvil::WindowWin3264::init(const bool& in_visible)
         /* NOTE: Anvil currently does not support automatic swapchain resizing so make sure the window is not scalable. */
         const auto visibility_flag = (in_visible) ? WS_VISIBLE : 0;
 
-        m_window = ::CreateWindowEx(0,                    /* dwExStyle */
+        m_window = ::CreateWindowEx(
+            WS_EX_APPWINDOW | WS_EX_WINDOWEDGE,                    /* dwExStyle */
             window_class_name,
             m_title.c_str(),
-            (WS_OVERLAPPEDWINDOW | visibility_flag | WS_SYSMENU) ^ WS_THICKFRAME,
+            WS_OVERLAPPEDWINDOW | WS_CLIPSIBLINGS |	WS_CLIPCHILDREN | visibility_flag,
             0, /* X */
             0, /* Y */
             window_rect.right - window_rect.left,

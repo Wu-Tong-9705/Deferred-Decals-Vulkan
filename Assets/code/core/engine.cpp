@@ -2,8 +2,6 @@
 #include "engine.h"
 
 #define APP_NAME      "Deferred Decals App"
-#define WINDOW_WIDTH  (1280)
-#define WINDOW_HEIGHT (720)
 
 
 #pragma region 接口
@@ -35,6 +33,11 @@ DescriptorSetGroup* Engine::getDsg()
 {
     return m_dsg_ptr.get();
 }
+
+float Engine::getAspect()
+{
+    return (float)m_width / m_height;
+}
 #pragma endregion
 
 
@@ -43,7 +46,10 @@ DescriptorSetGroup* Engine::getDsg()
 Engine::Engine()
     :m_n_last_semaphore_used           (0),
      m_n_swapchain_images              (N_SWAPCHAIN_IMAGES),
-     m_ub_data_size_per_swapchain_image(0)
+     m_ub_data_size_per_swapchain_image(0),
+     m_is_full_screen                  (false),
+     m_width                           (1280),
+     m_height                          (720)
 {
     // ..
 }
@@ -125,15 +131,16 @@ void Engine::init_window()
 #endif
 #endif
 
-    /* Create a window */
     m_window_ptr = WindowFactory::create_window(
-        platform,
-        APP_NAME,
-        1280,
-        720,
-        true, /* in_closable */
-        bind(&Engine::draw_frame, this)
+            platform,
+            APP_NAME,
+            m_width,
+            m_height,
+            true, /* in_closable */
+            bind(&Engine::draw_frame, this)
     );
+
+    ShowCursor(FALSE);
 
     m_window_ptr->register_for_callbacks(
         WINDOW_CALLBACK_ID_MOUSE_MOVE,
@@ -193,6 +200,8 @@ void Engine::init_swapchain()
         m_n_swapchain_images);
 
     m_swapchain_ptr->set_name("Main swapchain");
+    m_width = m_swapchain_ptr->get_width();
+    m_height = m_swapchain_ptr->get_height();
 
     /* Cache the queue we are going to use for presentation */
     const std::vector<uint32_t>* present_queue_fams_ptr = nullptr;
@@ -439,8 +448,8 @@ void Engine::init_depth()
         m_depth_format,
         Anvil::ImageTiling::OPTIMAL,
         Anvil::ImageUsageFlagBits::DEPTH_STENCIL_ATTACHMENT_BIT,
-        WINDOW_WIDTH,
-        WINDOW_HEIGHT,
+        m_width,
+        m_height,
         1,
         1,
         Anvil::SampleCountFlagBits::_1_BIT,
@@ -483,16 +492,16 @@ void Engine::init_framebuffers()
     /* We need to instantiate 1 framebuffer object per each used swap-chain image */
     for (uint32_t n_fbo = 0; n_fbo < N_SWAPCHAIN_IMAGES; ++n_fbo)
     {
-        Anvil::ImageView* attachment_image_view_ptr = nullptr;
+        ImageView* attachment_image_view_ptr = nullptr;
 
         attachment_image_view_ptr = m_swapchain_ptr->get_image_view(n_fbo);
 
         /* Create the internal framebuffer object */
         {
-            auto create_info_ptr = Anvil::FramebufferCreateInfo::create(
+            auto create_info_ptr = FramebufferCreateInfo::create(
                 m_device_ptr.get(),
-                WINDOW_WIDTH,
-                WINDOW_HEIGHT,
+                m_width,
+                m_height,
                 1 /* n_layers */);
 
             result = create_info_ptr->add_attachment(
@@ -505,7 +514,7 @@ void Engine::init_framebuffers()
                 nullptr /* out_opt_attachment_id_ptr */);
             anvil_assert(result);
 
-            m_fbos[n_fbo] = Anvil::Framebuffer::create(std::move(create_info_ptr));
+            m_fbos[n_fbo] = Framebuffer::create(move(create_info_ptr));
         }
 
         m_fbos[n_fbo]->set_name_formatted(
@@ -592,8 +601,8 @@ void Engine::init_command_buffers()
         attachment_clear_value[0].color = { 0.0f, 0.0f, 0.0f, 1.0f };
         attachment_clear_value[1].depthStencil = { 1.0f, 0 };
 
-        render_area.extent.height = WINDOW_HEIGHT;
-        render_area.extent.width = WINDOW_WIDTH;
+        render_area.extent.height = m_height;
+        render_area.extent.width = m_width;
         render_area.offset.x = 0;
         render_area.offset.y = 0;
 
@@ -658,6 +667,35 @@ void Engine::init_events()
 {
     /* Stub */
 }
+
+void Engine::recreate_swapchain()
+{
+    //当窗口最小化时停止渲染
+    tagRECT rect;
+    GetClientRect(m_window_ptr->get_handle(), &rect);
+    long width = rect.right - rect.left;
+    long height = rect.bottom - rect.top;
+
+    while (width == 0 || height == 0)
+    {
+        GetClientRect(m_window_ptr->get_handle(), &rect);
+        width = rect.right - rect.left;
+        height = rect.bottom - rect.top;
+        MSG msg;
+        GetMessage(&msg, nullptr, 0, 0);
+        ::TranslateMessage(&msg);
+        ::DispatchMessage(&msg);
+    }
+
+    cleanup_swapwhain();
+
+    init_swapchain();
+    init_render_pass();
+    init_gfx_pipelines();
+    init_depth();
+    init_framebuffers();
+    init_command_buffers();
+}
 #pragma endregion
 
 #pragma region 运行
@@ -668,12 +706,49 @@ void Engine::run()
 
 void Engine::draw_frame()
 {
-    Anvil::Semaphore* curr_frame_signal_semaphore_ptr = nullptr;
-    Anvil::Semaphore* curr_frame_wait_semaphore_ptr = nullptr;
-    uint32_t                        n_swapchain_image;
-    Anvil::Queue* present_queue_ptr = m_device_ptr->get_universal_queue(0);
-    Anvil::Semaphore* present_wait_semaphore_ptr = nullptr;
-    const Anvil::PipelineStageFlags wait_stage_mask = Anvil::PipelineStageFlagBits::ALL_COMMANDS_BIT;
+    if (m_key->IsPressed(KeyID::KEY_ID_ESCAPE))
+    {
+        m_window_ptr->close();
+        return;
+    }
+
+    if (m_key->IsPressed(KeyID::KEY_ID_F1))
+    {
+        m_is_full_screen = !m_is_full_screen;
+        if (m_is_full_screen)
+        {
+            GetWindowRect(m_window_ptr->get_handle(), &m_rect_before_full_screen);
+            
+            HWND hDesk = GetDesktopWindow();
+            RECT rc;
+            GetWindowRect(hDesk, &rc);
+            SetWindowLong(m_window_ptr->get_handle(), GWL_STYLE, WS_POPUP);
+            SetWindowPos(m_window_ptr->get_handle(), HWND_TOPMOST, 0, 0, rc.right, rc.bottom, SWP_SHOWWINDOW);
+            recreate_swapchain();
+            return;
+        }
+        else
+        {
+            SetWindowLong(m_window_ptr->get_handle(), GWL_STYLE, WS_OVERLAPPEDWINDOW);
+            SetWindowPos(
+                m_window_ptr->get_handle(), 
+                HWND_TOPMOST,
+                m_rect_before_full_screen.left,
+                m_rect_before_full_screen.top,
+                m_rect_before_full_screen.right,
+                m_rect_before_full_screen.bottom,
+                SWP_SHOWWINDOW);
+            recreate_swapchain();
+            return;
+        }
+    }
+
+    Semaphore* curr_frame_signal_semaphore_ptr = nullptr;
+    Semaphore* curr_frame_wait_semaphore_ptr = nullptr;
+    uint32_t n_swapchain_image;
+    Queue* present_queue_ptr = m_device_ptr->get_universal_queue(0);
+    Semaphore* present_wait_semaphore_ptr = nullptr;
+    const PipelineStageFlags wait_stage_mask = PipelineStageFlagBits::ALL_COMMANDS_BIT;
 
     /* Determine the signal + wait semaphores to use for drawing this frame */
     m_n_last_semaphore_used = (m_n_last_semaphore_used + 1) % m_n_swapchain_images;
@@ -690,15 +765,23 @@ void Engine::draw_frame()
             &n_swapchain_image,
             true); /* in_should_block */
 
-        ANVIL_REDUNDANT_VARIABLE_CONST(acquire_result);
-        anvil_assert(acquire_result == Anvil::SwapchainOperationErrorCode::SUCCESS);
+        if (acquire_result != SwapchainOperationErrorCode::SUCCESS)
+        {
+            recreate_swapchain();
+            return;
+        }
+        else if (acquire_result != SwapchainOperationErrorCode::SUCCESS 
+            && acquire_result != SwapchainOperationErrorCode::SUBOPTIMAL)
+        {
+            throw std::runtime_error("failed to acquire swap chain image!");
+        }
     }
 
     /* Submit work chunk and present */
     update_data_ub_contents(n_swapchain_image);
 
     present_queue_ptr->submit(
-        Anvil::SubmitInfo::create(
+        SubmitInfo::create(
             m_command_buffers[n_swapchain_image].get(),
             1, /* n_semaphores_to_signal */
             &curr_frame_signal_semaphore_ptr,
@@ -709,7 +792,7 @@ void Engine::draw_frame()
     );
 
     {
-        Anvil::SwapchainOperationErrorCode present_result = Anvil::SwapchainOperationErrorCode::DEVICE_LOST;
+        SwapchainOperationErrorCode present_result = SwapchainOperationErrorCode::DEVICE_LOST;
 
         present_queue_ptr->present(m_swapchain_ptr.get(),
             n_swapchain_image,
@@ -717,12 +800,18 @@ void Engine::draw_frame()
             &present_wait_semaphore_ptr,
             &present_result);
 
-        ANVIL_REDUNDANT_VARIABLE(present_result);
-        anvil_assert(present_result == Anvil::SwapchainOperationErrorCode::SUCCESS);
+        if (present_result == SwapchainOperationErrorCode::OUT_OF_DATE
+            || present_result == SwapchainOperationErrorCode::SUBOPTIMAL)
+        {
+            recreate_swapchain();
+        }
+        else if (present_result != SwapchainOperationErrorCode::SUCCESS)
+        {
+            throw std::runtime_error("failed to present swap chain image!");
+        }
     }
 }
 
-/** Updates the buffer memory, which holds position, rotation and size data for all triangles. */
 void Engine::update_data_ub_contents(uint32_t in_n_swapchain_image)
 {
     static auto startTime = chrono::high_resolution_clock::now();
@@ -731,9 +820,9 @@ void Engine::update_data_ub_contents(uint32_t in_n_swapchain_image)
     float time = chrono::duration<float, chrono::seconds::period>(currentTime - startTime).count();
 
 
-    if (m_key->IsPressed(KeyID::KEY_ID_UP))
+    if (m_key->IsPressed(KeyID::KEY_ID_FORWARD))
         m_camera->ProcessKeyboard(FORWARD, time);
-    if (m_key->IsPressed(KeyID::KEY_ID_DOWN))
+    if (m_key->IsPressed(KeyID::KEY_ID_BACKWARD))
         m_camera->ProcessKeyboard(BACKWARD, time);
     if (m_key->IsPressed(KeyID::KEY_ID_LEFT))
         m_camera->ProcessKeyboard(LEFT, time);
@@ -741,9 +830,8 @@ void Engine::update_data_ub_contents(uint32_t in_n_swapchain_image)
         m_camera->ProcessKeyboard(RIGHT, time);
 
     MVP mvp = {};
-    mvp.model =
-        rotate(mat4(1.0f), time * radians(30.0f), vec3(0.0f, 1.0f, 0.0f))
-        * scale(mat4(1.0f), vec3(0.015f, 0.015f, 0.015f));
+    mvp.model = rotate(mat4(1.0f), /*time * */radians(30.0f), vec3(0.0f, 1.0f, 0.0f))
+        *scale(mat4(1.0f), vec3(0.015f, 0.015f, 0.015f));
     mvp.view = Camera::Active()->GetViewMatrix();
     mvp.proj = Camera::Active()->GetProjMatrix();
 
@@ -763,12 +851,12 @@ void Engine::mouse_callback(CallbackArgument* argumentPtr)
     static double lastX = mouse_x_pos;
     static double lastY = mouse_y_pos;
 
-    if (mouse_x_pos > WINDOW_WIDTH * 0.8 || mouse_x_pos < WINDOW_WIDTH * 0.2 ||
-        mouse_y_pos > WINDOW_HEIGHT * 0.8 || mouse_y_pos < WINDOW_HEIGHT * 0.2)
+    if (mouse_x_pos > m_width * 0.8 || mouse_x_pos < m_width * 0.2 ||
+        mouse_y_pos > m_height * 0.8 || mouse_y_pos < m_height * 0.2)
     {
-        SetCursorPos(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
-        lastX = WINDOW_WIDTH / 2;
-        lastY = WINDOW_HEIGHT / 2;
+        SetCursorPos(m_width / 2, m_height / 2);
+        lastX = m_width / 2;
+        lastY = m_height / 2;
         return;
     }
 
@@ -799,6 +887,7 @@ void Engine::key_release_callback(CallbackArgument* argumentPtr)
 {
     m_key->SetReleased(reinterpret_cast<OnKeyCallbackArgument*>(argumentPtr)->key_id);
 }
+
 #pragma endregion
 
 #pragma region 卸载
@@ -807,40 +896,42 @@ Engine::~Engine()
     deinit();
 }
 
-void Engine::deinit()
+void Engine::cleanup_swapwhain()
 {
     auto gfx_pipeline_manager_ptr = m_device_ptr->get_graphics_pipeline_manager();
+    Vulkan::vkDeviceWaitIdle(m_device_ptr->get_device_vk());
 
-    Anvil::Vulkan::vkDeviceWaitIdle(m_device_ptr->get_device_vk());
-
-    if (m_pipeline_id != UINT32_MAX)
-    {
-        gfx_pipeline_manager_ptr->delete_pipeline(m_pipeline_id);
-
-        m_pipeline_id = UINT32_MAX;
-    }
-
-    m_frame_signal_semaphores.clear();
-    m_frame_wait_semaphores.clear();
-
-    m_rendering_surface_ptr.reset();
-    m_swapchain_ptr.reset();
     m_depth_image_view_ptr.reset();
     m_depth_image_ptr.reset();
 
-    for (uint32_t n_swapchain_image = 0;
-        n_swapchain_image < N_SWAPCHAIN_IMAGES;
-        ++n_swapchain_image)
+    for (uint32_t n_swapchain_image = 0; n_swapchain_image < N_SWAPCHAIN_IMAGES; ++n_swapchain_image)
     {
         m_command_buffers[n_swapchain_image].reset();
         m_fbos[n_swapchain_image].reset();
     }
 
+    if (m_pipeline_id != UINT32_MAX)
+    {
+        gfx_pipeline_manager_ptr->delete_pipeline(m_pipeline_id);
+        m_pipeline_id = UINT32_MAX;
+    }
+    m_renderpass_ptr.reset();
+    m_swapchain_ptr.reset();
+}
+
+void Engine::deinit()
+{
+    cleanup_swapwhain();
+
+    m_frame_signal_semaphores.clear();
+    m_frame_wait_semaphores.clear();
+
+    m_rendering_surface_ptr.reset();
+    
     m_dsg_ptr.reset();
     m_uniform_buffer_ptr.reset();
     m_fs_ptr.reset();
     m_vs_ptr.reset();
-    m_renderpass_ptr.reset();
 
     m_model.reset();
 
