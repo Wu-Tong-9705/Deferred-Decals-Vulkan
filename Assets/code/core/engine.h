@@ -19,7 +19,7 @@ public:
 
     BaseDevice* getDevice();
     PipelineLayout* getPineLine();
-    DescriptorSetGroup* getDsg();
+    vector<DescriptorSet::CombinedImageSamplerBindingElement>* getCombinedImageSamplers();
     float getAspect();
 
     ~Engine();
@@ -79,6 +79,7 @@ private:
     VkDeviceSize              m_ub_data_size_per_swapchain_image;
     WindowUniquePtr           m_window_ptr;
 
+    vector<DescriptorSet::CombinedImageSamplerBindingElement> m_combined_image_samplers;
     BufferUniquePtr                              m_uniform_buffer_ptr;
     DescriptorSetGroupUniquePtr                  m_dsg_ptr;
 

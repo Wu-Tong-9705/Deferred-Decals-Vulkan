@@ -78,5 +78,8 @@
     <None Include="shader\test.vert" />
     <None Include="Assets\code\shader\test.frag" />
     <None Include="Assets\code\shader\test.vert" />
+    <None Include="README.md" />
+    <None Include="Assets\code\shader\GBuffer.vert" />
+    <None Include="Assets\code\shader\GBuffer.frag" />
   </ItemGroup>
 </Project>

@@ -8,7 +8,7 @@ class Model
 public:
 	Model(string const& path);
 	int get_texture_num();
-	void set_dsg_binding_item(int first);
+	void add_combined_image_samplers();
 	void draw(PrimaryCommandBuffer* cmd_buffer_ptr, DescriptorSet* ds_ptr[2], int first, uint32_t data_ub_offset);
 
 	~Model();

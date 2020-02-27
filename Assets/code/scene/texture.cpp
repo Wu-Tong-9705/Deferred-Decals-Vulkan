@@ -138,21 +138,20 @@ const char* Texture::get_path()
 	return m_path.data();
 }
 
-int Texture::get_n_set()
+uint32_t* Texture::get_texture_id()
 {
-	return m_n_set;
+	return &m_texture_id;
 }
 
-void Texture::set_dsg_binding_item(int n_set)
+void Texture::add_combined_image_sampler()
 {
-	m_n_set = n_set ;
-	Engine::Instance()->getDsg()->set_binding_item(
-		n_set, /* n_set     */
-		0, /* n_binding */
+	m_texture_id = Engine::Instance()->getCombinedImageSamplers()->size();
+	Engine::Instance()->getCombinedImageSamplers()->push_back(
 		DescriptorSet::CombinedImageSamplerBindingElement(
 			ImageLayout::SHADER_READ_ONLY_OPTIMAL,
 			m_texture_image_view_ptr.get(),
-			m_texture_sampler_ptr.get()));
+			m_texture_sampler_ptr.get())
+	);
 }
 
 Texture::~Texture()

@@ -2,7 +2,8 @@
 #include "camera.h"
 
 Camera::Camera(vec3 position, vec3 up, float yaw, float pitch)
-	: m_front(vec3(0.0f, 0.0f, -1.0f)), m_movement_speed(SPEED), m_mouse_sensitivity(SENSITIVITY), m_zoom(ZOOM)
+	: m_front(vec3(0.0f, 0.0f, -1.0f)), m_movement_speed(SPEED), m_mouse_sensitivity(SENSITIVITY), m_zoom(ZOOM),
+	  m_near_z(NEARZ),m_far_z(FARZ)
 {
 	m_position = position;
 	m_world_up = up;
@@ -12,7 +13,8 @@ Camera::Camera(vec3 position, vec3 up, float yaw, float pitch)
 }
 
 Camera::Camera(float posX, float posY, float posZ, float upX, float upY, float upZ, float yaw, float pitch)
-	: m_front(vec3(0.0f, 0.0f, -1.0f)), m_movement_speed(SPEED), m_mouse_sensitivity(SENSITIVITY), m_zoom(ZOOM)
+	: m_front(vec3(0.0f, 0.0f, -1.0f)), m_movement_speed(SPEED), m_mouse_sensitivity(SENSITIVITY), m_zoom(ZOOM),
+	  m_near_z(NEARZ), m_far_z(FARZ)
 {
 	m_position = vec3(posX, posY, posZ);
 	m_world_up = vec3(upX, upY, upZ);
@@ -28,7 +30,7 @@ mat4 Camera::GetViewMatrix()
 
 mat4 Camera::GetProjMatrix()
 {
-	mat4 proj = perspective(radians(m_zoom), Engine::Instance()->getAspect(), 0.1f, 100.0f);
+	mat4 proj = perspective(radians(m_zoom), Engine::Instance()->getAspect(), m_near_z, m_far_z);
 	proj[1][1] *= -1;
 	return proj;
 }

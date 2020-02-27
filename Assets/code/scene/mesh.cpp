@@ -20,13 +20,9 @@ void Mesh::load_mesh(const aiMesh* mesh, int i)
 		vertex.pos.y = mesh->mVertices[i].y;
 		vertex.pos.z = mesh->mVertices[i].z;
 
-		//vertex.normal.x = mesh->mNormals[i].x;
-		//vertex.normal.y = mesh->mNormals[i].y;
-		//vertex.normal.z = mesh->mNormals[i].z;
-		
-		vertex.normal.x = 0;
-		vertex.normal.y = 0;
-		vertex.normal.z = 0;
+		vertex.normal.x = mesh->mNormals[i].x;
+		vertex.normal.y = mesh->mNormals[i].y;
+		vertex.normal.z = mesh->mNormals[i].z;
 
 		if (mesh->mTextureCoords[0])
 		{
@@ -37,6 +33,15 @@ void Mesh::load_mesh(const aiMesh* mesh, int i)
 		{
 			vertex.texCoord = vec2(0.0f, 0.0f);
 		}
+
+		vertex.tangent.x = mesh->mTangents[i].x;
+		vertex.tangent.y = mesh->mTangents[i].y;
+		vertex.tangent.z = mesh->mTangents[i].z;
+
+		vertex.bitangent.x = mesh->mBitangents[i].x;
+		vertex.bitangent.y = mesh->mBitangents[i].y;
+		vertex.bitangent.z = mesh->mBitangents[i].z;
+
 
 		vertices.push_back(vertex);
 	}
@@ -101,6 +106,7 @@ void Mesh::load_mesh(const aiMesh* mesh, int i)
 		indices.data());
 	#pragma endregion
 
+
 }
 
 void Mesh::set_material(shared_ptr<Material> material)
@@ -110,18 +116,14 @@ void Mesh::set_material(shared_ptr<Material> material)
 
 void Mesh::draw(PrimaryCommandBuffer* cmd_buffer_ptr, DescriptorSet* ds_ptr[2], int first, uint32_t data_ub_offset)
 {
-	ds_ptr[first] = Engine::Instance()->getDsg()->get_descriptor_set(m_material->get_n_set());
-
-	cmd_buffer_ptr->record_bind_descriptor_sets(
-		Anvil::PipelineBindPoint::GRAPHICS,
+	cmd_buffer_ptr->record_push_constants(
 		Engine::Instance()->getPineLine(),
-		0, /* firstSet */
-		2, /* setCount */
-		ds_ptr,
-		1,                /* dynamicOffsetCount */
-		&data_ub_offset); /* pDynamicOffsets    */
+		ShaderStageFlagBits::FRAGMENT_BIT,
+		0, /* in_offset */
+		4,
+		m_material->get_texture_id());
 
-	Anvil::Buffer* buffer_raw_ptrs[] = { m_vertex_buffer_ptr.get() };
+	Buffer* buffer_raw_ptrs[] = { m_vertex_buffer_ptr.get() };
 	const VkDeviceSize buffer_offsets[] = { 0 };
 	cmd_buffer_ptr->record_bind_vertex_buffers(
 		0, /* start_binding */

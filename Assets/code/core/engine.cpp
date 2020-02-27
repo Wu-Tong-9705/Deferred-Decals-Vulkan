@@ -3,7 +3,6 @@
 
 #define APP_NAME      "Deferred Decals App"
 
-
 #pragma region 接口
 unique_ptr<Engine>& Engine::Instance()
 {
@@ -29,9 +28,9 @@ PipelineLayout* Engine::getPineLine()
     return gfx_pipeline_manager_ptr->get_pipeline_layout(m_pipeline_id);
 }
 
-DescriptorSetGroup* Engine::getDsg()
+vector<DescriptorSet::CombinedImageSamplerBindingElement>* Engine::getCombinedImageSamplers()
 {
-    return m_dsg_ptr.get();
+    return &m_combined_image_samplers;
 }
 
 float Engine::getAspect()
@@ -39,8 +38,6 @@ float Engine::getAspect()
     return (float)m_width / m_height;
 }
 #pragma endregion
-
-
 
 #pragma region 初始化
 Engine::Engine()
@@ -57,7 +54,7 @@ Engine::Engine()
 void Engine::init()
 {
     m_camera = make_shared<Camera>(vec3(0.0f, 0.0f, 3.0f));
-    m_camera->SetAsActive();//激活
+    m_camera->SetAsActive();
     m_key = make_shared<Key>();
     
     
@@ -87,35 +84,35 @@ void Engine::init_vulkan()
 {
     /* Create a Vulkan instance */
     {
-        auto create_info_ptr = Anvil::InstanceCreateInfo::create(APP_NAME,  /* in_app_name    */
+        auto create_info_ptr = InstanceCreateInfo::create(APP_NAME,  /* in_app_name    */
             APP_NAME,  /* in_engine_name */
             #ifdef ENABLE_VALIDATION
-            std::bind(
+            bind(
                 &Engine::on_validation_callback,
                 this,
-                std::placeholders::_1,
-                std::placeholders::_2),
+                placeholders::_1,
+                placeholders::_2),
             #else
-            Anvil::DebugCallbackFunction(),
+            DebugCallbackFunction(),
             #endif
             false); /* in_mt_safe */
 
-        m_instance_ptr = Anvil::Instance::create(std::move(create_info_ptr));
+        m_instance_ptr = Instance::create(move(create_info_ptr));
     }
 
     m_physical_device_ptr = m_instance_ptr->get_physical_device(0);
 
     /* Create a Vulkan device */
     {
-        auto create_info_ptr = Anvil::DeviceCreateInfo::create_sgpu(
+        auto create_info_ptr = DeviceCreateInfo::create_sgpu(
             m_physical_device_ptr,
             true,                       /* in_enable_shader_module_cache */
-            Anvil::DeviceExtensionConfiguration(),
-            std::vector<std::string>(), /* in_layers */
-            Anvil::CommandPoolCreateFlagBits::NONE,
+            DeviceExtensionConfiguration(),
+            vector<string>(), /* in_layers */
+            CommandPoolCreateFlagBits::NONE,
             false);                     /* in_mt_safe */
 
-        m_device_ptr = Anvil::SGPUDevice::create(std::move(create_info_ptr));
+        m_device_ptr = SGPUDevice::create(move(create_info_ptr));
     }
 }
 
@@ -248,39 +245,48 @@ void Engine::init_buffers()
 
 void Engine::init_dsgs()
 {
-    auto dsg_create_info_ptrs = vector<DescriptorSetCreateInfoUniquePtr>(1 + m_model->get_texture_num());
+    #pragma region 创建描述符集群
+    auto dsg_create_info_ptrs = vector<DescriptorSetCreateInfoUniquePtr>(2);
 
     dsg_create_info_ptrs[0] = DescriptorSetCreateInfo::create();
     dsg_create_info_ptrs[0]->add_binding(
+        0, /* n_binding */
+        DescriptorType::COMBINED_IMAGE_SAMPLER,
+        8, /* n_elements */
+        ShaderStageFlagBits::FRAGMENT_BIT);
+
+    dsg_create_info_ptrs[1] = DescriptorSetCreateInfo::create();
+    dsg_create_info_ptrs[1]->add_binding(
         0, /* n_binding */
         DescriptorType::UNIFORM_BUFFER_DYNAMIC,
         1, /* n_elements */
         ShaderStageFlagBits::VERTEX_BIT);
 
-    for (int i = 1; i < dsg_create_info_ptrs.size(); i++)
-    {
-        dsg_create_info_ptrs[i] = DescriptorSetCreateInfo::create();
-        dsg_create_info_ptrs[i]->add_binding(
-            0, /* n_binding */
-            DescriptorType::COMBINED_IMAGE_SAMPLER,
-            1, /* n_elements */
-            ShaderStageFlagBits::FRAGMENT_BIT);
-    }
-    
-
     m_dsg_ptr = DescriptorSetGroup::create(
         m_device_ptr.get(),
         dsg_create_info_ptrs);
+    #pragma endregion
+
+    #pragma region 为描述符集绑定具体资源
+    m_model->add_combined_image_samplers();
+
+    m_dsg_ptr->set_binding_array_items(
+        0, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
+        0, /* n_binding */
+        BindingElementArrayRange(
+            0,                                  /* StartBindingElementIndex */
+            m_combined_image_samplers.size()),  /* NumberOfBindingElements  */
+        m_combined_image_samplers.data());
 
     m_dsg_ptr->set_binding_item(
-        0, /* n_set     */
+        1, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
         0, /* n_binding */
         DescriptorSet::DynamicUniformBufferBindingElement(
             m_uniform_buffer_ptr.get(),
             0, /* in_start_offset */
             m_ub_data_size_per_swapchain_image));
+    #pragma endregion
 
-    m_model->set_dsg_binding_item(1);
 }
 
 
@@ -351,12 +357,12 @@ void Engine::init_shaders()
     fragment_shader_ptr = Anvil::GLSLShaderToSPIRVGenerator::create(
         m_device_ptr.get(),
         Anvil::GLSLShaderToSPIRVGenerator::MODE_LOAD_SOURCE_FROM_FILE,
-        "Assets/code/shader/test.frag",
+        "Assets/code/shader/GBuffer.frag",
         Anvil::ShaderStage::FRAGMENT);
     vertex_shader_ptr = Anvil::GLSLShaderToSPIRVGenerator::create(
         m_device_ptr.get(),
         Anvil::GLSLShaderToSPIRVGenerator::MODE_LOAD_SOURCE_FROM_FILE,
-        "Assets/code/shader/test.vert",
+        "Assets/code/shader/GBuffer.vert",
         Anvil::ShaderStage::VERTEX);
 
     fragment_shader_module_ptr = Anvil::ShaderModule::create_from_spirv_generator(
@@ -398,7 +404,12 @@ void Engine::init_gfx_pipelines()
         *m_vs_ptr);
 
     gfx_pipeline_create_info_ptr->set_descriptor_set_create_info(m_dsg_ptr->get_descriptor_set_create_info());
-    
+   
+    gfx_pipeline_create_info_ptr->attach_push_constant_range(
+        0, /* in_offset */
+        1, /* in_size */
+        Anvil::ShaderStageFlagBits::FRAGMENT_BIT);
+
     gfx_pipeline_create_info_ptr->set_rasterization_properties(
         PolygonMode::FILL,
         CullModeFlagBits::NONE,
@@ -526,11 +537,11 @@ void Engine::init_framebuffers()
 void Engine::init_command_buffers()
 {
     auto                          gfx_pipeline_manager_ptr(m_device_ptr->get_graphics_pipeline_manager());
-    Anvil::ImageSubresourceRange  image_subresource_range;
-    std::unique_ptr<float[]>      luminance_data_ptr;
-    Anvil::Queue* universal_queue_ptr(m_device_ptr->get_universal_queue(0));
+    ImageSubresourceRange  image_subresource_range;
+    unique_ptr<float[]>      luminance_data_ptr;
+    Queue* universal_queue_ptr(m_device_ptr->get_universal_queue(0));
 
-    image_subresource_range.aspect_mask = Anvil::ImageAspectFlagBits::COLOR_BIT;
+    image_subresource_range.aspect_mask = ImageAspectFlagBits::COLOR_BIT;
     image_subresource_range.base_array_layer = 0;
     image_subresource_range.base_mip_level = 0;
     image_subresource_range.layer_count = 1;
@@ -538,7 +549,7 @@ void Engine::init_command_buffers()
 
     for (uint32_t n_command_buffer = 0; n_command_buffer < N_SWAPCHAIN_IMAGES; ++n_command_buffer)
     {
-        Anvil::PrimaryCommandBufferUniquePtr cmd_buffer_ptr;
+        PrimaryCommandBufferUniquePtr cmd_buffer_ptr;
 
         cmd_buffer_ptr = m_device_ptr->
             get_command_pool_for_queue_family_index(m_device_ptr->get_universal_queue(0)->get_queue_family_index())
@@ -550,20 +561,20 @@ void Engine::init_command_buffers()
 
         /* Switch the swap-chain image to the color_attachment_optimal image layout */
         {
-            Anvil::ImageBarrier image_barrier(
-                Anvil::AccessFlagBits::NONE,                       /* source_access_mask       */
-                Anvil::AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT, /* destination_access_mask  */
-                Anvil::ImageLayout::UNDEFINED,                  /* old_image_layout */
-                Anvil::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,   /* new_image_layout */
+            ImageBarrier image_barrier(
+                AccessFlagBits::NONE,                       /* source_access_mask       */
+                AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT, /* destination_access_mask  */
+                ImageLayout::UNDEFINED,                  /* old_image_layout */
+                ImageLayout::COLOR_ATTACHMENT_OPTIMAL,   /* new_image_layout */
                 universal_queue_ptr->get_queue_family_index(),
                 universal_queue_ptr->get_queue_family_index(),
                 m_swapchain_ptr->get_image(n_command_buffer),
                 image_subresource_range);
 
             cmd_buffer_ptr->record_pipeline_barrier(
-                Anvil::PipelineStageFlagBits::TOP_OF_PIPE_BIT,            /* src_stage_mask                 */
-                Anvil::PipelineStageFlagBits::COLOR_ATTACHMENT_OUTPUT_BIT,/* dst_stage_mask                 */
-                Anvil::DependencyFlagBits::NONE,
+                PipelineStageFlagBits::TOP_OF_PIPE_BIT,            /* src_stage_mask                 */
+                PipelineStageFlagBits::COLOR_ATTACHMENT_OUTPUT_BIT,/* dst_stage_mask                 */
+                DependencyFlagBits::NONE,
                 0,                                                        /* in_memory_barrier_count        */
                 nullptr,                                                  /* in_memory_barrier_ptrs         */
                 0,                                                        /* in_buffer_memory_barrier_count */
@@ -573,9 +584,9 @@ void Engine::init_command_buffers()
         }
 
         /* Make sure CPU-written data is flushed before we start rendering */
-        Anvil::BufferBarrier buffer_barrier(
-            Anvil::AccessFlagBits::HOST_WRITE_BIT,                 /* in_source_access_mask      */
-            Anvil::AccessFlagBits::UNIFORM_READ_BIT,               /* in_destination_access_mask */
+        BufferBarrier buffer_barrier(
+            AccessFlagBits::HOST_WRITE_BIT,                 /* in_source_access_mask      */
+            AccessFlagBits::UNIFORM_READ_BIT,               /* in_destination_access_mask */
             universal_queue_ptr->get_queue_family_index(),         /* in_src_queue_family_index  */
             universal_queue_ptr->get_queue_family_index(),         /* in_dst_queue_family_index  */
             m_uniform_buffer_ptr.get(),
@@ -583,9 +594,9 @@ void Engine::init_command_buffers()
             m_ub_data_size_per_swapchain_image);
 
         cmd_buffer_ptr->record_pipeline_barrier(
-            Anvil::PipelineStageFlagBits::HOST_BIT,
-            Anvil::PipelineStageFlagBits::VERTEX_SHADER_BIT,
-            Anvil::DependencyFlagBits::NONE,
+            PipelineStageFlagBits::HOST_BIT,
+            PipelineStageFlagBits::VERTEX_SHADER_BIT,
+            DependencyFlagBits::NONE,
             0,               /* in_memory_barrier_count        */
             nullptr,         /* in_memory_barriers_ptr         */
             1,               /* in_buffer_memory_barrier_count */
@@ -594,7 +605,7 @@ void Engine::init_command_buffers()
             nullptr);        /* in_image_memory_barriers_ptr   */
 
         /* 2. Render the geometry. */
-        std::array<VkClearValue, 2>       attachment_clear_value;
+        array<VkClearValue, 2>       attachment_clear_value;
         VkRect2D                          render_area;
         VkShaderStageFlags                shaderStageFlags = 0;
 
@@ -615,12 +626,20 @@ void Engine::init_command_buffers()
             SubpassContents::INLINE);
         {
             const uint32_t        data_ub_offset = static_cast<uint32_t>(m_ub_data_size_per_swapchain_image * n_command_buffer);
-            DescriptorSet* ds_ptr[2];
-            ds_ptr[0] = m_dsg_ptr->get_descriptor_set(0);
+            DescriptorSet* ds_ptr[2] = { m_dsg_ptr->get_descriptor_set(0) ,m_dsg_ptr->get_descriptor_set(1) };
 
             cmd_buffer_ptr->record_bind_pipeline(
                 PipelineBindPoint::GRAPHICS,
                 m_pipeline_id);
+
+            cmd_buffer_ptr->record_bind_descriptor_sets(
+                Anvil::PipelineBindPoint::GRAPHICS,
+                Engine::Instance()->getPineLine(),
+                0, /* firstSet */
+                2, /* setCount：传入的描述符集与shader中的set一一对应 */
+                ds_ptr,
+                1,                /* dynamicOffsetCount */
+                &data_ub_offset); /* pDynamicOffsets    */
 
             m_model->draw(cmd_buffer_ptr.get(), ds_ptr, 1, data_ub_offset);
             
@@ -644,13 +663,13 @@ void Engine::init_semaphores()
         {
             auto create_info_ptr = Anvil::SemaphoreCreateInfo::create(m_device_ptr.get());
 
-            new_signal_semaphore_ptr = Anvil::Semaphore::create(std::move(create_info_ptr));
+            new_signal_semaphore_ptr = Anvil::Semaphore::create(move(create_info_ptr));
         }
 
         {
             auto create_info_ptr = Anvil::SemaphoreCreateInfo::create(m_device_ptr.get());
 
-            new_wait_semaphore_ptr = Anvil::Semaphore::create(std::move(create_info_ptr));
+            new_wait_semaphore_ptr = Anvil::Semaphore::create(move(create_info_ptr));
         }
 
         new_signal_semaphore_ptr->set_name_formatted("Signal semaphore [%d]",
@@ -658,8 +677,8 @@ void Engine::init_semaphores()
         new_wait_semaphore_ptr->set_name_formatted("Wait semaphore [%d]",
             n_semaphore);
 
-        m_frame_signal_semaphores.push_back(std::move(new_signal_semaphore_ptr));
-        m_frame_wait_semaphores.push_back(std::move(new_wait_semaphore_ptr));
+        m_frame_signal_semaphores.push_back(move(new_signal_semaphore_ptr));
+        m_frame_wait_semaphores.push_back(move(new_wait_semaphore_ptr));
     }
 }
 
@@ -773,7 +792,7 @@ void Engine::draw_frame()
         else if (acquire_result != SwapchainOperationErrorCode::SUCCESS 
             && acquire_result != SwapchainOperationErrorCode::SUBOPTIMAL)
         {
-            throw std::runtime_error("failed to acquire swap chain image!");
+            throw runtime_error("failed to acquire swap chain image!");
         }
     }
 

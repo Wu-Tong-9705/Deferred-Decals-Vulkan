@@ -67,11 +67,13 @@ struct Vertex
     alignas(16) vec3 pos;
     alignas(16) vec3 normal;
     alignas(16) vec2 texCoord;
+    alignas(16) vec3 tangent;
+    alignas(16) vec3 bitangent;
 
     //属性描述：顶点着色器如何从顶点数据中提取顶点属性
-    static array<VertexInputAttribute, 3> getVertexInputAttribute()
+    static array<VertexInputAttribute, 5> getVertexInputAttribute()
     {
-        array<VertexInputAttribute, 3> vertexInputAttributes = {};
+        array<VertexInputAttribute, 5> vertexInputAttributes = {};
 
         vertexInputAttributes[0] = Anvil::VertexInputAttribute(
             0, /* in_location */
@@ -87,6 +89,16 @@ struct Vertex
             2, /* in_location */
             Anvil::Format::R32G32_SFLOAT,
             offsetof(Vertex, texCoord));
+
+        vertexInputAttributes[3] = Anvil::VertexInputAttribute(
+            3, /* in_location */
+            Anvil::Format::R32G32B32_SFLOAT,
+            offsetof(Vertex, tangent));
+
+        vertexInputAttributes[4] = Anvil::VertexInputAttribute(
+            4, /* in_location */
+            Anvil::Format::R32G32B32_SFLOAT,
+            offsetof(Vertex, bitangent));
 
         return vertexInputAttributes;
     }
