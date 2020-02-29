@@ -75,10 +75,10 @@ void Model::add_combined_image_samplers()
 	}
 }
 
-void Model::draw(PrimaryCommandBuffer* cmd_buffer_ptr, DescriptorSet* ds_ptr[2], int first, uint32_t data_ub_offset)
+void Model::draw(PrimaryCommandBuffer* cmd_buffer_ptr)
 {
 	for (int i = 0; i < m_meshes.size(); i++)
 	{
-		m_meshes[i]->draw(cmd_buffer_ptr, ds_ptr, first, data_ub_offset);
+		m_meshes[i]->draw(cmd_buffer_ptr);
 	}
 }

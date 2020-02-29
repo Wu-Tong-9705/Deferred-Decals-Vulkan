@@ -51,7 +51,8 @@ private:
         const vector<Format>& candidates,
         ImageTiling tiling,
         FormatFeatureFlags features);
-    void init_depth          ();
+    void init_image          ();
+    void init_image_view     ();
     void init_framebuffers   ();
     void init_command_buffers();
 
@@ -93,6 +94,15 @@ private:
 
     ImageUniquePtr                               m_depth_image_ptr;
     ImageViewUniquePtr                           m_depth_image_view_ptr;
+    ImageUniquePtr                               m_tangent_frame_image_ptr;
+    ImageViewUniquePtr                           m_tangent_frame_image_view_ptr;
+    ImageUniquePtr                               m_uv_and_depth_gradient_image_ptr;
+    ImageViewUniquePtr                           m_uv_and_depth_gradient_image_view_ptr;
+    ImageUniquePtr                               m_uv_gradient_image_ptr;
+    ImageViewUniquePtr                           m_uv_gradient_image_view_ptr;
+    ImageUniquePtr                               m_material_id_image_ptr;
+    ImageViewUniquePtr                           m_material_id_image_view_ptr;
+
     FramebufferUniquePtr                         m_fbos[N_SWAPCHAIN_IMAGES];
     PrimaryCommandBufferUniquePtr                m_command_buffers[N_SWAPCHAIN_IMAGES];
 
@@ -100,7 +110,7 @@ private:
     uint32_t       m_n_last_semaphore_used;
     const uint32_t m_n_swapchain_images;
     uint32_t       m_mipLevels;
-    Format  m_depth_format;
+    Format         m_depth_format;
 
     vector<SemaphoreUniquePtr> m_frame_signal_semaphores;
     vector<SemaphoreUniquePtr> m_frame_wait_semaphores;

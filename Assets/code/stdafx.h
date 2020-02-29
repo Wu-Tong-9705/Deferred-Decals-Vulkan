@@ -75,29 +75,29 @@ struct Vertex
     {
         array<VertexInputAttribute, 5> vertexInputAttributes = {};
 
-        vertexInputAttributes[0] = Anvil::VertexInputAttribute(
+        vertexInputAttributes[0] = VertexInputAttribute(
             0, /* in_location */
-            Anvil::Format::R32G32B32_SFLOAT,
+            Format::R32G32B32_SFLOAT,
             offsetof(Vertex, pos));
 
-        vertexInputAttributes[1] = Anvil::VertexInputAttribute(
+        vertexInputAttributes[1] = VertexInputAttribute(
             1, /* in_location */
-            Anvil::Format::R32G32B32_SFLOAT,
+            Format::R32G32B32_SFLOAT,
             offsetof(Vertex, normal));
 
-        vertexInputAttributes[2] = Anvil::VertexInputAttribute(
+        vertexInputAttributes[2] = VertexInputAttribute(
             2, /* in_location */
-            Anvil::Format::R32G32_SFLOAT,
+            Format::R32G32_SFLOAT,
             offsetof(Vertex, texCoord));
 
-        vertexInputAttributes[3] = Anvil::VertexInputAttribute(
+        vertexInputAttributes[3] = VertexInputAttribute(
             3, /* in_location */
-            Anvil::Format::R32G32B32_SFLOAT,
+            Format::R32G32B32_SFLOAT,
             offsetof(Vertex, tangent));
 
-        vertexInputAttributes[4] = Anvil::VertexInputAttribute(
+        vertexInputAttributes[4] = VertexInputAttribute(
             4, /* in_location */
-            Anvil::Format::R32G32B32_SFLOAT,
+            Format::R32G32B32_SFLOAT,
             offsetof(Vertex, bitangent));
 
         return vertexInputAttributes;
@@ -106,7 +106,12 @@ struct Vertex
     //÷ÿ‘ÿ∏≥÷µ‘ÀÀ„∑˚
     bool operator==(const Vertex& other) const
     {
-        return pos == other.pos && normal == other.normal && texCoord == other.texCoord;
+        return
+            pos == other.pos &&
+            normal == other.normal &&
+            texCoord == other.texCoord &&
+            tangent == other.tangent &&
+            bitangent == other.bitangent;
     }
 };
 struct MVP

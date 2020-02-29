@@ -32,7 +32,7 @@ void main()
 	worldNormal = normalize(mvp.model * vec4(inNormal, 0.0f)).xyz;
 
 	// 世界空间切线
-	worldBitangent = normalize(mvp.model * vec4(inTangent, 0.0f)).xyz;
+	worldTangent = normalize(mvp.model * vec4(inTangent, 0.0f)).xyz;
 	
 	// 世界空间副切线
 	worldBitangent = normalize(mvp.model * vec4(inBitangent, 0.0f)).xyz;

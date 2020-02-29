@@ -61,7 +61,7 @@ void Mesh::load_mesh(const aiMesh* mesh, int i)
 
 	allocator_ptr->add_buffer(
 		m_vertex_buffer_ptr.get(),
-		Anvil::MemoryFeatureFlagBits::NONE); /* in_required_memory_features */
+		MemoryFeatureFlagBits::NONE); /* in_required_memory_features */
 	#pragma endregion
 
 	#pragma region 获取索引数据
@@ -114,7 +114,7 @@ void Mesh::set_material(shared_ptr<Material> material)
 	m_material = material;
 }
 
-void Mesh::draw(PrimaryCommandBuffer* cmd_buffer_ptr, DescriptorSet* ds_ptr[2], int first, uint32_t data_ub_offset)
+void Mesh::draw(PrimaryCommandBuffer* cmd_buffer_ptr)
 {
 	cmd_buffer_ptr->record_push_constants(
 		Engine::Instance()->getPineLine(),

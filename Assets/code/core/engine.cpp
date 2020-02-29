@@ -71,7 +71,8 @@ void Engine::init()
     init_shaders();
     init_gfx_pipelines();
 
-    init_depth();
+    init_image();
+    init_image_view();
     init_framebuffers();
     init_command_buffers();
 
@@ -252,7 +253,7 @@ void Engine::init_dsgs()
     dsg_create_info_ptrs[0]->add_binding(
         0, /* n_binding */
         DescriptorType::COMBINED_IMAGE_SAMPLER,
-        8, /* n_elements */
+        m_model->get_texture_num(), /* n_elements */
         ShaderStageFlagBits::FRAGMENT_BIT);
 
     dsg_create_info_ptrs[1] = DescriptorSetCreateInfo::create();
@@ -293,58 +294,135 @@ void Engine::init_dsgs()
 
 void Engine::init_render_pass()
 {
-    Anvil::RenderPassCreateInfoUniquePtr render_pass_create_info_ptr(new Anvil::RenderPassCreateInfo(m_device_ptr.get()));
+    RenderPassCreateInfoUniquePtr render_pass_create_info_ptr(new RenderPassCreateInfo(m_device_ptr.get()));
     
     #pragma region 添加附件描述
-    Anvil::RenderPassAttachmentID render_pass_color_attachment_id, render_pass_depth_attachment_id;
+    RenderPassAttachmentID 
+        render_pass_color_attachment_id, 
+        tangent_frame_color_attachment_id, 
+        uv_and_depth_gradient_color_attachment_id, 
+        uv_gradient_color_attachment_id, 
+        material_id_color_attachment_id, 
+        render_pass_depth_attachment_id;
+
     render_pass_create_info_ptr->add_color_attachment(
         m_swapchain_ptr->get_create_info_ptr()->get_format(),
-        Anvil::SampleCountFlagBits::_1_BIT,
-        Anvil::AttachmentLoadOp::CLEAR,
-        Anvil::AttachmentStoreOp::STORE,
-        Anvil::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-        Anvil::ImageLayout::PRESENT_SRC_KHR,
+        SampleCountFlagBits::_1_BIT,
+        AttachmentLoadOp::CLEAR,
+        AttachmentStoreOp::STORE,
+        ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        ImageLayout::PRESENT_SRC_KHR,
         false, /* may_alias */
         &render_pass_color_attachment_id);
     
+    render_pass_create_info_ptr->add_color_attachment(
+        Format::A2B10G10R10_UNORM_PACK32,
+        SampleCountFlagBits::_1_BIT,
+        AttachmentLoadOp::CLEAR,
+        AttachmentStoreOp::STORE,
+        ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        false, /* may_alias */
+        &tangent_frame_color_attachment_id);
+
+    render_pass_create_info_ptr->add_color_attachment(
+        Format::A2B10G10R10_UNORM_PACK32,
+        SampleCountFlagBits::_1_BIT,
+        AttachmentLoadOp::CLEAR,
+        AttachmentStoreOp::STORE,
+        ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        false, /* may_alias */
+        &uv_and_depth_gradient_color_attachment_id);
+
+    render_pass_create_info_ptr->add_color_attachment(
+        Format::A2B10G10R10_UNORM_PACK32,
+        SampleCountFlagBits::_1_BIT,
+        AttachmentLoadOp::CLEAR,
+        AttachmentStoreOp::STORE,
+        ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        false, /* may_alias */
+        &uv_gradient_color_attachment_id);
+
+    render_pass_create_info_ptr->add_color_attachment(
+        Format::A2B10G10R10_UNORM_PACK32,
+        SampleCountFlagBits::_1_BIT,
+        AttachmentLoadOp::CLEAR,
+        AttachmentStoreOp::STORE,
+        ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        false, /* may_alias */
+        &material_id_color_attachment_id);
+    
     m_depth_format = SelectSupportedFormat(
-        { Anvil::Format::D32_SFLOAT,  Anvil::Format::D32_SFLOAT_S8_UINT,  Anvil::Format::D24_UNORM_S8_UINT },
-        Anvil::ImageTiling::OPTIMAL,
-        Anvil::FormatFeatureFlagBits::DEPTH_STENCIL_ATTACHMENT_BIT);
+        { Format::D32_SFLOAT,  Format::D32_SFLOAT_S8_UINT,  Format::D24_UNORM_S8_UINT },
+        ImageTiling::OPTIMAL,
+        FormatFeatureFlagBits::DEPTH_STENCIL_ATTACHMENT_BIT);
+
     render_pass_create_info_ptr->add_depth_stencil_attachment(
         m_depth_format,
-        Anvil::SampleCountFlagBits::_1_BIT,
-        Anvil::AttachmentLoadOp::CLEAR,
-        Anvil::AttachmentStoreOp::DONT_CARE,
-        Anvil::AttachmentLoadOp::DONT_CARE,
-        Anvil::AttachmentStoreOp::DONT_CARE,
-        Anvil::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-        Anvil::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        SampleCountFlagBits::_1_BIT,
+        AttachmentLoadOp::CLEAR,
+        AttachmentStoreOp::DONT_CARE,
+        AttachmentLoadOp::DONT_CARE,
+        AttachmentStoreOp::DONT_CARE,
+        ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
         false, /* may_alias */
         &render_pass_depth_attachment_id);
     #pragma endregion
 
     #pragma region 为子流程添加附件引用
-    Anvil::SubPassID m_render_pass_subpass_id;
+    SubPassID m_render_pass_subpass_id;
     render_pass_create_info_ptr->add_subpass(&m_render_pass_subpass_id);
 
     render_pass_create_info_ptr->add_subpass_color_attachment(
         m_render_pass_subpass_id,
-        Anvil::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
         render_pass_color_attachment_id,
         0,        /* location                      */
-        nullptr); /* opt_attachment_resolve_id_ptr */  
+        nullptr); /* opt_attachment_resolve_id_ptr */
+
+    render_pass_create_info_ptr->add_subpass_color_attachment(
+        m_render_pass_subpass_id,
+        ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        tangent_frame_color_attachment_id,
+        1,        /* location                      */
+        nullptr); /* opt_attachment_resolve_id_ptr */
+
+    render_pass_create_info_ptr->add_subpass_color_attachment(
+        m_render_pass_subpass_id,
+        ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        uv_and_depth_gradient_color_attachment_id,
+        2,        /* location                      */
+        nullptr); /* opt_attachment_resolve_id_ptr */
+
+    render_pass_create_info_ptr->add_subpass_color_attachment(
+        m_render_pass_subpass_id,
+        ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        uv_gradient_color_attachment_id,
+        3,        /* location                      */
+        nullptr); /* opt_attachment_resolve_id_ptr */
+
+    render_pass_create_info_ptr->add_subpass_color_attachment(
+        m_render_pass_subpass_id,
+        ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        material_id_color_attachment_id,
+        4,        /* location                      */
+        nullptr); /* opt_attachment_resolve_id_ptr */
    
     render_pass_create_info_ptr->add_subpass_depth_stencil_attachment(
         m_render_pass_subpass_id,
-        Anvil::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
         render_pass_depth_attachment_id);
     #pragma endregion
 
-    m_renderpass_ptr = Anvil::RenderPass::create(
-        std::move(render_pass_create_info_ptr),
+    m_renderpass_ptr = RenderPass::create(
+        move(render_pass_create_info_ptr),
         m_swapchain_ptr.get());
     m_renderpass_ptr->set_name("Main renderpass");
+
 }
 
 void Engine::init_shaders()
@@ -448,51 +526,246 @@ void Engine::init_gfx_pipelines()
 
 
 
-void Engine::init_depth()
+void Engine::init_image()
 {
-    auto allocator_ptr = Anvil::MemoryAllocator::create_oneshot(m_device_ptr.get());
+    auto allocator_ptr = MemoryAllocator::create_oneshot(m_device_ptr.get());
 
     #pragma region 创建深度图像
-    auto create_info_ptr = Anvil::ImageCreateInfo::create_no_alloc(
-        m_device_ptr.get(),
-        Anvil::ImageType::_2D,
-        m_depth_format,
-        Anvil::ImageTiling::OPTIMAL,
-        Anvil::ImageUsageFlagBits::DEPTH_STENCIL_ATTACHMENT_BIT,
-        m_width,
-        m_height,
-        1,
-        1,
-        Anvil::SampleCountFlagBits::_1_BIT,
-        Anvil::QueueFamilyFlagBits::COMPUTE_BIT | Anvil::QueueFamilyFlagBits::GRAPHICS_BIT,
-        Anvil::SharingMode::EXCLUSIVE,
-        false,
-        Anvil::ImageCreateFlagBits::NONE,
-        Anvil::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+    {
+        auto image_create_info_ptr = ImageCreateInfo::create_no_alloc(
+            m_device_ptr.get(),
+            ImageType::_2D,
+            m_depth_format,
+            ImageTiling::OPTIMAL,
+            ImageUsageFlagBits::DEPTH_STENCIL_ATTACHMENT_BIT,
+            m_width,
+            m_height,
+            1,
+            1,
+            SampleCountFlagBits::_1_BIT,
+            QueueFamilyFlagBits::COMPUTE_BIT | QueueFamilyFlagBits::GRAPHICS_BIT,
+            SharingMode::EXCLUSIVE,
+            false,
+            ImageCreateFlagBits::NONE,
+            ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
-    m_depth_image_ptr = Anvil::Image::create(std::move(create_info_ptr));
-    m_depth_image_ptr->set_name("Depth image");
+        m_depth_image_ptr = Image::create(move(image_create_info_ptr));
+        m_depth_image_ptr->set_name("Depth image");
 
-    allocator_ptr->add_image_whole(
-        m_depth_image_ptr.get(),
-        Anvil::MemoryFeatureFlagBits::DEVICE_LOCAL_BIT);
+        allocator_ptr->add_image_whole(
+            m_depth_image_ptr.get(),
+            MemoryFeatureFlagBits::DEVICE_LOCAL_BIT);
+    }
     #pragma endregion
 
-    #pragma region 创建深度图像视图
-    auto create_info_ptr2 = Anvil::ImageViewCreateInfo::create_2D(
-        m_device_ptr.get(),
-        m_depth_image_ptr.get(),
-        0,
-        0,
-        1,
-        Anvil::ImageAspectFlagBits::DEPTH_BIT,
-        m_depth_format,
-        Anvil::ComponentSwizzle::R,
-        Anvil::ComponentSwizzle::G,
-        Anvil::ComponentSwizzle::B,
-        Anvil::ComponentSwizzle::A);
+    #pragma region 创建切线框架图像
+    {
+        auto image_create_info_ptr = ImageCreateInfo::create_no_alloc(
+            m_device_ptr.get(),
+            ImageType::_2D,
+            Format::A2B10G10R10_UNORM_PACK32,
+            ImageTiling::OPTIMAL,
+            ImageUsageFlagBits::COLOR_ATTACHMENT_BIT,
+            m_width,
+            m_height,
+            1,
+            1,
+            SampleCountFlagBits::_1_BIT,
+            QueueFamilyFlagBits::COMPUTE_BIT | QueueFamilyFlagBits::GRAPHICS_BIT,
+            SharingMode::EXCLUSIVE,
+            false,
+            ImageCreateFlagBits::NONE,
+            ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
 
-    m_depth_image_view_ptr = Anvil::ImageView::create(std::move(create_info_ptr2));
+        m_tangent_frame_image_ptr = Image::create(move(image_create_info_ptr));
+        m_tangent_frame_image_ptr->set_name("Tangent frame image");
+
+        allocator_ptr->add_image_whole(
+            m_tangent_frame_image_ptr.get(),
+            MemoryFeatureFlagBits::DEVICE_LOCAL_BIT);
+    }
+    #pragma endregion
+
+    #pragma region 创建UV和深度梯度图像
+    {
+        auto image_create_info_ptr = ImageCreateInfo::create_no_alloc(
+            m_device_ptr.get(),
+            ImageType::_2D,
+            Format::R16G16B16A16_SNORM,
+            ImageTiling::OPTIMAL,
+            ImageUsageFlagBits::COLOR_ATTACHMENT_BIT,
+            m_width,
+            m_height,
+            1,
+            1,
+            SampleCountFlagBits::_1_BIT,
+            QueueFamilyFlagBits::COMPUTE_BIT | QueueFamilyFlagBits::GRAPHICS_BIT,
+            SharingMode::EXCLUSIVE,
+            false,
+            ImageCreateFlagBits::NONE,
+            ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+
+        m_uv_and_depth_gradient_image_ptr = Image::create(move(image_create_info_ptr));
+        m_uv_and_depth_gradient_image_ptr->set_name("UV and depth gradient image");
+
+        allocator_ptr->add_image_whole(
+            m_uv_and_depth_gradient_image_ptr.get(),
+            MemoryFeatureFlagBits::DEVICE_LOCAL_BIT);
+    }
+    #pragma endregion
+
+    #pragma region 创建UV梯度图像
+    {
+        auto image_create_info_ptr = ImageCreateInfo::create_no_alloc(
+            m_device_ptr.get(),
+            ImageType::_2D,
+            Format::R16G16B16A16_SNORM,
+            ImageTiling::OPTIMAL,
+            ImageUsageFlagBits::COLOR_ATTACHMENT_BIT,
+            m_width,
+            m_height,
+            1,
+            1,
+            SampleCountFlagBits::_1_BIT,
+            QueueFamilyFlagBits::COMPUTE_BIT | QueueFamilyFlagBits::GRAPHICS_BIT,
+            SharingMode::EXCLUSIVE,
+            false,
+            ImageCreateFlagBits::NONE,
+            ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+
+        m_uv_gradient_image_ptr = Image::create(move(image_create_info_ptr));
+        m_uv_gradient_image_ptr->set_name("UV gradient image");
+
+        allocator_ptr->add_image_whole(
+            m_uv_gradient_image_ptr.get(),
+            MemoryFeatureFlagBits::DEVICE_LOCAL_BIT);
+    }
+    #pragma endregion
+
+    #pragma region 创建材质ID图像
+    {
+        auto image_create_info_ptr = ImageCreateInfo::create_no_alloc(
+            m_device_ptr.get(),
+            ImageType::_2D,
+            Format::R8_UINT,
+            ImageTiling::OPTIMAL,
+            ImageUsageFlagBits::COLOR_ATTACHMENT_BIT,
+            m_width,
+            m_height,
+            1,
+            1,
+            SampleCountFlagBits::_1_BIT,
+            QueueFamilyFlagBits::COMPUTE_BIT | QueueFamilyFlagBits::GRAPHICS_BIT,
+            SharingMode::EXCLUSIVE,
+            false,
+            ImageCreateFlagBits::NONE,
+            ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+
+        m_material_id_image_ptr = Image::create(move(image_create_info_ptr));
+        m_material_id_image_ptr->set_name("material id image");
+
+        allocator_ptr->add_image_whole(
+            m_material_id_image_ptr.get(),
+            MemoryFeatureFlagBits::DEVICE_LOCAL_BIT);
+    }
+    #pragma endregion
+}
+
+void Engine::init_image_view()
+{
+    #pragma region 创建深度图像视图
+    {
+        auto image_view_create_info_ptr = ImageViewCreateInfo::create_2D(
+            m_device_ptr.get(),
+            m_depth_image_ptr.get(),
+            0,
+            0,
+            1,
+            ImageAspectFlagBits::DEPTH_BIT,
+            m_depth_format,
+            ComponentSwizzle::R,
+            ComponentSwizzle::G,
+            ComponentSwizzle::B,
+            ComponentSwizzle::A);
+
+        m_depth_image_view_ptr = ImageView::create(move(image_view_create_info_ptr));
+    }
+    #pragma endregion
+
+    #pragma region 创建切线框架图像视图
+    {
+        auto image_view_create_info_ptr = ImageViewCreateInfo::create_2D(
+            m_device_ptr.get(),
+            m_tangent_frame_image_ptr.get(),
+            0,
+            0,
+            1,
+            ImageAspectFlagBits::COLOR_BIT,
+            Format::A2B10G10R10_UNORM_PACK32,
+            ComponentSwizzle::R,
+            ComponentSwizzle::G,
+            ComponentSwizzle::B,
+            ComponentSwizzle::A);
+
+        m_tangent_frame_image_view_ptr = ImageView::create(move(image_view_create_info_ptr));
+    }
+    #pragma endregion
+
+    #pragma region 创建UV和深度梯度图像视图
+    {
+        auto image_view_create_info_ptr = ImageViewCreateInfo::create_2D(
+            m_device_ptr.get(),
+            m_uv_and_depth_gradient_image_ptr.get(),
+            0,
+            0,
+            1,
+            ImageAspectFlagBits::COLOR_BIT,
+            Format::R16G16B16A16_SNORM,
+            ComponentSwizzle::R,
+            ComponentSwizzle::G,
+            ComponentSwizzle::B,
+            ComponentSwizzle::A);
+
+        m_uv_and_depth_gradient_image_view_ptr = ImageView::create(move(image_view_create_info_ptr));
+    }
+    #pragma endregion
+
+    #pragma region 创建UV和深度梯度图像视图
+    {
+        auto image_view_create_info_ptr = ImageViewCreateInfo::create_2D(
+            m_device_ptr.get(),
+            m_uv_gradient_image_ptr.get(),
+            0,
+            0,
+            1,
+            ImageAspectFlagBits::COLOR_BIT,
+            Format::R16G16B16A16_SNORM,
+            ComponentSwizzle::R,
+            ComponentSwizzle::G,
+            ComponentSwizzle::B,
+            ComponentSwizzle::A);
+
+        m_uv_gradient_image_view_ptr = ImageView::create(move(image_view_create_info_ptr));
+    }
+    #pragma endregion
+
+    #pragma region 创建材质ID图像视图
+    {
+        auto image_view_create_info_ptr = ImageViewCreateInfo::create_2D(
+            m_device_ptr.get(),
+            m_material_id_image_ptr.get(),
+            0,
+            0,
+            1,
+            ImageAspectFlagBits::COLOR_BIT,
+            Format::R8_UINT,
+            ComponentSwizzle::R,
+            ComponentSwizzle::ZERO,
+            ComponentSwizzle::ZERO,
+            ComponentSwizzle::ZERO);
+
+        m_material_id_image_view_ptr = ImageView::create(move(image_view_create_info_ptr));
+    }
     #pragma endregion
 }
 
@@ -519,6 +792,26 @@ void Engine::init_framebuffers()
                 attachment_image_view_ptr,
                 nullptr /* out_opt_attachment_id_ptr */);
             anvil_assert(result);
+            
+            result = create_info_ptr->add_attachment(
+                m_tangent_frame_image_view_ptr.get(),
+                nullptr /* out_opt_attachment_id_ptr */);
+            anvil_assert(result);
+
+            result = create_info_ptr->add_attachment(
+                m_uv_and_depth_gradient_image_view_ptr.get(),
+                nullptr /* out_opt_attachment_id_ptr */);
+            anvil_assert(result);
+
+            result = create_info_ptr->add_attachment(
+                m_uv_gradient_image_view_ptr.get(),
+                nullptr /* out_opt_attachment_id_ptr */);
+            anvil_assert(result);
+
+            result = create_info_ptr->add_attachment(
+                m_material_id_image_view_ptr.get(),
+                nullptr /* out_opt_attachment_id_ptr */);
+            anvil_assert(result);
 
             result = create_info_ptr->add_attachment(
                 m_depth_image_view_ptr.get(),
@@ -536,10 +829,9 @@ void Engine::init_framebuffers()
 
 void Engine::init_command_buffers()
 {
-    auto                          gfx_pipeline_manager_ptr(m_device_ptr->get_graphics_pipeline_manager());
+    auto                   gfx_pipeline_manager_ptr(m_device_ptr->get_graphics_pipeline_manager());
     ImageSubresourceRange  image_subresource_range;
-    unique_ptr<float[]>      luminance_data_ptr;
-    Queue* universal_queue_ptr(m_device_ptr->get_universal_queue(0));
+    Queue*                 universal_queue_ptr(m_device_ptr->get_universal_queue(0));
 
     image_subresource_range.aspect_mask = ImageAspectFlagBits::COLOR_BIT;
     image_subresource_range.base_array_layer = 0;
@@ -605,12 +897,16 @@ void Engine::init_command_buffers()
             nullptr);        /* in_image_memory_barriers_ptr   */
 
         /* 2. Render the geometry. */
-        array<VkClearValue, 2>       attachment_clear_value;
+        array<VkClearValue, 6>            attachment_clear_value;
         VkRect2D                          render_area;
         VkShaderStageFlags                shaderStageFlags = 0;
 
         attachment_clear_value[0].color = { 0.0f, 0.0f, 0.0f, 1.0f };
-        attachment_clear_value[1].depthStencil = { 1.0f, 0 };
+        attachment_clear_value[1].color = { 0.0f, 0.0f, 0.0f, 0.0f };
+        attachment_clear_value[2].color = { 0.0f, 0.0f, 0.0f, 0.0f };
+        attachment_clear_value[3].color = { 0.0f, 0.0f, 0.0f, 0.0f };
+        attachment_clear_value[4].color = { uint32(0), uint32(0), uint32(0), uint32(0) };
+        attachment_clear_value[5].depthStencil = { 1.0f, 0 };
 
         render_area.extent.height = m_height;
         render_area.extent.width = m_width;
@@ -618,14 +914,14 @@ void Engine::init_command_buffers()
         render_area.offset.y = 0;
 
         cmd_buffer_ptr->record_begin_render_pass(
-            2, /* in_n_clear_values */
+            6, /* in_n_clear_values */
             attachment_clear_value.data(),
             m_fbos[n_command_buffer].get(),
             render_area,
             m_renderpass_ptr.get(),
             SubpassContents::INLINE);
         {
-            const uint32_t        data_ub_offset = static_cast<uint32_t>(m_ub_data_size_per_swapchain_image * n_command_buffer);
+            const uint32_t data_ub_offset = static_cast<uint32_t>(m_ub_data_size_per_swapchain_image * n_command_buffer);
             DescriptorSet* ds_ptr[2] = { m_dsg_ptr->get_descriptor_set(0) ,m_dsg_ptr->get_descriptor_set(1) };
 
             cmd_buffer_ptr->record_bind_pipeline(
@@ -633,7 +929,7 @@ void Engine::init_command_buffers()
                 m_pipeline_id);
 
             cmd_buffer_ptr->record_bind_descriptor_sets(
-                Anvil::PipelineBindPoint::GRAPHICS,
+                PipelineBindPoint::GRAPHICS,
                 Engine::Instance()->getPineLine(),
                 0, /* firstSet */
                 2, /* setCount：传入的描述符集与shader中的set一一对应 */
@@ -641,7 +937,7 @@ void Engine::init_command_buffers()
                 1,                /* dynamicOffsetCount */
                 &data_ub_offset); /* pDynamicOffsets    */
 
-            m_model->draw(cmd_buffer_ptr.get(), ds_ptr, 1, data_ub_offset);
+            m_model->draw(cmd_buffer_ptr.get());
             
         }
         cmd_buffer_ptr->record_end_render_pass();
@@ -649,7 +945,7 @@ void Engine::init_command_buffers()
         /* Close the recording process */
         cmd_buffer_ptr->stop_recording();
 
-        m_command_buffers[n_command_buffer] = std::move(cmd_buffer_ptr);
+        m_command_buffers[n_command_buffer] = move(cmd_buffer_ptr);
     }
 }
 
@@ -711,7 +1007,8 @@ void Engine::recreate_swapchain()
     init_swapchain();
     init_render_pass();
     init_gfx_pipelines();
-    init_depth();
+    init_image();
+    init_image_view();
     init_framebuffers();
     init_command_buffers();
 }
@@ -833,10 +1130,10 @@ void Engine::draw_frame()
 
 void Engine::update_data_ub_contents(uint32_t in_n_swapchain_image)
 {
-    static auto startTime = chrono::high_resolution_clock::now();
-
+    static auto lastTime = chrono::high_resolution_clock::now();
     auto currentTime = chrono::high_resolution_clock::now();
-    float time = chrono::duration<float, chrono::seconds::period>(currentTime - startTime).count();
+    float time = chrono::duration<float, chrono::seconds::period>(currentTime - lastTime).count();
+    lastTime = currentTime;
 
 
     if (m_key->IsPressed(KeyID::KEY_ID_FORWARD))
@@ -921,7 +1218,16 @@ void Engine::cleanup_swapwhain()
     Vulkan::vkDeviceWaitIdle(m_device_ptr->get_device_vk());
 
     m_depth_image_view_ptr.reset();
+    m_uv_and_depth_gradient_image_view_ptr.reset();
+    m_uv_gradient_image_view_ptr.reset();
+    m_tangent_frame_image_view_ptr.reset();
+    m_material_id_image_view_ptr.reset();
+
     m_depth_image_ptr.reset();
+    m_tangent_frame_image_ptr.reset();
+    m_uv_and_depth_gradient_image_ptr.reset();
+    m_uv_gradient_image_ptr.reset();
+    m_material_id_image_ptr.reset();
 
     for (uint32_t n_swapchain_image = 0; n_swapchain_image < N_SWAPCHAIN_IMAGES; ++n_swapchain_image)
     {
