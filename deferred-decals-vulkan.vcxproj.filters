@@ -81,5 +81,6 @@
     <None Include="README.md" />
     <None Include="Assets\code\shader\GBuffer.vert" />
     <None Include="Assets\code\shader\GBuffer.frag" />
+    <None Include="Assets\code\shader\deferred.comp" />
   </ItemGroup>
 </Project>

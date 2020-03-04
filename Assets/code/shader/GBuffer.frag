@@ -2,24 +2,22 @@
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 
-layout(set = 0, binding = 0) uniform sampler2D texSampler[];
 layout(push_constant) uniform Tex
 {
 	uint ID;
 }tex;
 
-layout(location = 0) in vec3 worldPosition;
-layout(location = 1) in vec3 worldNormal;
-layout(location = 2) in vec3 worldTangent;
-layout(location = 3) in vec3 worldBitangent;
-layout(location = 4) in vec2 texCoord;
+layout(location = 0) in vec3 inWorldPosition;
+layout(location = 1) in vec3 inWorldNormal;
+layout(location = 2) in vec3 inWorldTangent;
+layout(location = 3) in vec3 inWorldBitangent;
+layout(location = 4) in vec2 inTexCoord;
 
 
-layout(location = 0) out vec4 outColor;
-layout(location = 1) out vec4 outTangentFrame;
-layout(location = 2) out vec4 outUVandDepthGradient;
-layout(location = 3) out vec4 outUVGradient;
-layout(location = 4) out uint outMaterialID;
+layout(location = 0) out vec4 outTangentFrame;
+layout(location = 1) out vec4 outUVandDepthGradient;
+layout(location = 2) out vec4 outUVGradient;
+layout(location = 3) out uint outMaterialID;
 
 
 vec4 QuatFrom3x3(mat3x3 m)
@@ -104,11 +102,9 @@ vec4 PackQuaternion(vec4 q)
 
 void main() 
 {
-	outColor = texture(texSampler[tex.ID], texCoord);
-
-	vec3 normalWS = normalize(worldNormal);
-	vec3 tangentWS = normalize(worldTangent);
-	vec3 bitangentWS = normalize(worldBitangent);
+	vec3 normalWS = normalize(inWorldNormal);
+	vec3 tangentWS = normalize(inWorldTangent);
+	vec3 bitangentWS = normalize(inWorldBitangent);
 
 	float handedness = dot(bitangentWS, cross(normalWS, tangentWS)) > 0.0f ? 1.0f : -1.0f;
 	bitangentWS *= handedness;
@@ -116,12 +112,12 @@ void main()
 	vec4 tangentFrame = QuatFrom3x3(mat3x3(tangentWS, bitangentWS, normalWS));
 	outTangentFrame = PackQuaternion(tangentFrame);
 
-	outUVandDepthGradient.xy = fract(texCoord / 2.0000f);
+	outUVandDepthGradient.xy = fract(inTexCoord / 2.0000f);
 	outUVandDepthGradient.zw = vec2(dFdx(gl_FragCoord.z), dFdy(gl_FragCoord.z));
 	outUVandDepthGradient.zw = sign(outUVandDepthGradient.zw) * pow(abs(outUVandDepthGradient.zw), vec2(1/2.0f, 1/2.0f));
 	outMaterialID = tex.ID & 0x7F;
 	if(handedness == -1.0f)
 		outMaterialID |= 0x80;
 
-	outUVGradient = vec4(dFdx(texCoord), dFdy(texCoord));
+	outUVGradient = vec4(dFdx(inTexCoord), dFdy(inTexCoord));
 }

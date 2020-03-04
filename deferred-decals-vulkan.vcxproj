@@ -171,6 +171,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Anvil\build\Anvil.sln" />
+    <None Include="Assets\code\shader\deferred.comp" />
     <None Include="Assets\code\shader\GBuffer.frag" />
     <None Include="Assets\code\shader\GBuffer.vert" />
     <None Include="Assets\code\shader\test.frag" />
