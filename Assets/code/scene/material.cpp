@@ -14,9 +14,9 @@ void Material::set_texture(shared_ptr<Texture> texture)
 	m_diffuse_texture = texture;
 }
 
-int Material::get_n_set()
+uint32_t* Material::get_texture_id()
 {
-	return m_diffuse_texture->get_n_set();
+	return m_diffuse_texture->get_texture_id();
 }
 
 Material::~Material()

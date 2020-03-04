@@ -7,7 +7,7 @@ class Material
 public:
 	Material(aiMaterial* material);
 	void set_texture(shared_ptr<Texture>);
-	int get_n_set();
+	uint32_t* get_texture_id();
 	~Material();
 
 private:

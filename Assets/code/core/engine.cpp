@@ -1,8 +1,7 @@
 #include "stdafx.h"
 #include "engine.h"
 
-#define APP_NAME      "Deferred Decals App"
-
+#define APP_NAME "Deferred Decals App"
 
 #pragma region 接口
 unique_ptr<Engine>& Engine::Instance()
@@ -23,15 +22,23 @@ BaseDevice* Engine::getDevice()
     return m_device_ptr.get();
 }
 
-PipelineLayout* Engine::getPineLine()
+PipelineLayout* Engine::getPineLine(bool is_gfx)
 {
-    auto gfx_pipeline_manager_ptr(m_device_ptr->get_graphics_pipeline_manager());
-    return gfx_pipeline_manager_ptr->get_pipeline_layout(m_pipeline_id);
+    if (is_gfx) 
+    {
+        auto gfx_pipeline_manager_ptr(m_device_ptr->get_graphics_pipeline_manager());
+        return gfx_pipeline_manager_ptr->get_pipeline_layout(m_gfx_pipeline_id);    
+    }
+    else
+    {
+        auto compute_pipeline_manager_ptr(m_device_ptr->get_compute_pipeline_manager());
+        return compute_pipeline_manager_ptr->get_pipeline_layout(m_compute_pipeline_id);
+    }
 }
 
-DescriptorSetGroup* Engine::getDsg()
+vector<DescriptorSet::CombinedImageSamplerBindingElement>* Engine::getCombinedImageSamplers()
 {
-    return m_dsg_ptr.get();
+    return &m_combined_image_samplers;
 }
 
 float Engine::getAspect()
@@ -39,8 +46,6 @@ float Engine::getAspect()
     return (float)m_width / m_height;
 }
 #pragma endregion
-
-
 
 #pragma region 初始化
 Engine::Engine()
@@ -57,7 +62,7 @@ Engine::Engine()
 void Engine::init()
 {
     m_camera = make_shared<Camera>(vec3(0.0f, 0.0f, 3.0f));
-    m_camera->SetAsActive();//激活
+    m_camera->SetAsActive();
     m_key = make_shared<Key>();
     
     
@@ -68,13 +73,16 @@ void Engine::init()
     m_model = make_shared<Model>("assets/models/girls/3/girl.obj");
 
     init_buffers();
+    init_image();
+    init_image_view_and_sampler();
+    m_model->add_combined_image_samplers();
     init_dsgs();
 
     init_render_pass();
     init_shaders();
     init_gfx_pipelines();
+    init_compute_pipelines();
 
-    init_depth();
     init_framebuffers();
     init_command_buffers();
 
@@ -87,35 +95,35 @@ void Engine::init_vulkan()
 {
     /* Create a Vulkan instance */
     {
-        auto create_info_ptr = Anvil::InstanceCreateInfo::create(APP_NAME,  /* in_app_name    */
+        auto create_info_ptr = InstanceCreateInfo::create(
+            APP_NAME,  /* in_app_name    */
             APP_NAME,  /* in_engine_name */
-            #ifdef ENABLE_VALIDATION
-            std::bind(
-                &Engine::on_validation_callback,
+            #ifdef NDEBUG
+            Anvil::DebugCallbackFunction(),
+            #else
+            std::bind(&Engine::on_validation_callback,
                 this,
                 std::placeholders::_1,
                 std::placeholders::_2),
-            #else
-            Anvil::DebugCallbackFunction(),
-            #endif
+            #endif           
             false); /* in_mt_safe */
 
-        m_instance_ptr = Anvil::Instance::create(std::move(create_info_ptr));
+        m_instance_ptr = Instance::create(move(create_info_ptr));
     }
 
     m_physical_device_ptr = m_instance_ptr->get_physical_device(0);
 
     /* Create a Vulkan device */
     {
-        auto create_info_ptr = Anvil::DeviceCreateInfo::create_sgpu(
+        auto create_info_ptr = DeviceCreateInfo::create_sgpu(
             m_physical_device_ptr,
             true,                       /* in_enable_shader_module_cache */
-            Anvil::DeviceExtensionConfiguration(),
-            std::vector<std::string>(), /* in_layers */
-            Anvil::CommandPoolCreateFlagBits::NONE,
+            DeviceExtensionConfiguration(),
+            vector<string>(), /* in_layers */
+            CommandPoolCreateFlagBits::NONE,
             false);                     /* in_mt_safe */
 
-        m_device_ptr = Anvil::SGPUDevice::create(std::move(create_info_ptr));
+        m_device_ptr = SGPUDevice::create(move(create_info_ptr));
     }
 }
 
@@ -177,14 +185,15 @@ void Engine::init_window()
 
 void Engine::init_swapchain()
 {
-    Anvil::SGPUDevice* device_ptr(reinterpret_cast<Anvil::SGPUDevice*>(m_device_ptr.get()));
+    SGPUDevice* device_ptr(reinterpret_cast<SGPUDevice*>(m_device_ptr.get()));
 
     {
-        auto create_info_ptr = Anvil::RenderingSurfaceCreateInfo::create(m_instance_ptr.get(),
+        auto create_info_ptr = RenderingSurfaceCreateInfo::create(
+            m_instance_ptr.get(),
             m_device_ptr.get(),
             m_window_ptr.get());
 
-        m_rendering_surface_ptr = Anvil::RenderingSurface::create(std::move(create_info_ptr));
+        m_rendering_surface_ptr = RenderingSurface::create(std::move(create_info_ptr));
     }
 
     m_rendering_surface_ptr->set_name("Main rendering surface");
@@ -193,10 +202,10 @@ void Engine::init_swapchain()
     m_swapchain_ptr = device_ptr->create_swapchain(
         m_rendering_surface_ptr.get(),
         m_window_ptr.get(),
-        Anvil::Format::B8G8R8A8_UNORM,
-        Anvil::ColorSpaceKHR::SRGB_NONLINEAR_KHR,
-        Anvil::PresentModeKHR::FIFO_KHR,
-        Anvil::ImageUsageFlagBits::COLOR_ATTACHMENT_BIT,
+        Format::B8G8R8A8_UNORM,
+        ColorSpaceKHR::SRGB_NONLINEAR_KHR,
+        PresentModeKHR::FIFO_KHR,
+        ImageUsageFlagBits::COLOR_ATTACHMENT_BIT | ImageUsageFlagBits::STORAGE_BIT,
         m_n_swapchain_images);
 
     m_swapchain_ptr->set_name("Main swapchain");
@@ -204,7 +213,7 @@ void Engine::init_swapchain()
     m_height = m_swapchain_ptr->get_height();
 
     /* Cache the queue we are going to use for presentation */
-    const std::vector<uint32_t>* present_queue_fams_ptr = nullptr;
+    const vector<uint32_t>* present_queue_fams_ptr = nullptr;
 
     if (!m_rendering_surface_ptr->get_queue_families_with_present_support(
             device_ptr->get_physical_device(),
@@ -246,159 +255,592 @@ void Engine::init_buffers()
     #pragma endregion
 }
 
+void Engine::init_image()
+{
+    auto allocator_ptr = MemoryAllocator::create_oneshot(m_device_ptr.get());
+
+    #pragma region 创建深度图像
+    {
+        m_depth_format = SelectSupportedFormat(
+            { Format::D32_SFLOAT,  Format::D32_SFLOAT_S8_UINT,  Format::D24_UNORM_S8_UINT },
+            ImageTiling::OPTIMAL,
+            FormatFeatureFlagBits::DEPTH_STENCIL_ATTACHMENT_BIT);
+
+        auto image_create_info_ptr = ImageCreateInfo::create_no_alloc(
+            m_device_ptr.get(),
+            ImageType::_2D,
+            m_depth_format,
+            ImageTiling::OPTIMAL,
+            ImageUsageFlagBits::DEPTH_STENCIL_ATTACHMENT_BIT
+            | ImageUsageFlagBits::SAMPLED_BIT,
+            m_width,
+            m_height,
+            1,
+            1,
+            SampleCountFlagBits::_1_BIT,
+            QueueFamilyFlagBits::COMPUTE_BIT | QueueFamilyFlagBits::GRAPHICS_BIT,
+            SharingMode::EXCLUSIVE,
+            false,
+            ImageCreateFlagBits::NONE,
+            ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+
+        m_depth_image_ptr = Image::create(move(image_create_info_ptr));
+        m_depth_image_ptr->set_name("Depth image");
+
+        allocator_ptr->add_image_whole(
+            m_depth_image_ptr.get(),
+            MemoryFeatureFlagBits::DEVICE_LOCAL_BIT);
+    }
+    #pragma endregion
+
+    #pragma region 创建切线框架图像
+    {
+        auto image_create_info_ptr = ImageCreateInfo::create_no_alloc(
+            m_device_ptr.get(),
+            ImageType::_2D,
+            Format::A2B10G10R10_UNORM_PACK32,
+            ImageTiling::OPTIMAL,
+            ImageUsageFlagBits::COLOR_ATTACHMENT_BIT
+            | ImageUsageFlagBits::SAMPLED_BIT,
+            m_width,
+            m_height,
+            1,
+            1,
+            SampleCountFlagBits::_1_BIT,
+            QueueFamilyFlagBits::COMPUTE_BIT | QueueFamilyFlagBits::GRAPHICS_BIT,
+            SharingMode::EXCLUSIVE,
+            false,
+            ImageCreateFlagBits::NONE,
+            ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+
+        m_tangent_frame_image_ptr = Image::create(move(image_create_info_ptr));
+        m_tangent_frame_image_ptr->set_name("Tangent frame image");
+
+        allocator_ptr->add_image_whole(
+            m_tangent_frame_image_ptr.get(),
+            MemoryFeatureFlagBits::DEVICE_LOCAL_BIT);
+    }
+    #pragma endregion
+
+    #pragma region 创建UV和深度梯度图像
+    {
+        auto image_create_info_ptr = ImageCreateInfo::create_no_alloc(
+            m_device_ptr.get(),
+            ImageType::_2D,
+            Format::R16G16B16A16_SNORM,
+            ImageTiling::OPTIMAL,
+            ImageUsageFlagBits::COLOR_ATTACHMENT_BIT
+            | ImageUsageFlagBits::SAMPLED_BIT,
+            m_width,
+            m_height,
+            1,
+            1,
+            SampleCountFlagBits::_1_BIT,
+            QueueFamilyFlagBits::COMPUTE_BIT | QueueFamilyFlagBits::GRAPHICS_BIT,
+            SharingMode::EXCLUSIVE,
+            false,
+            ImageCreateFlagBits::NONE,
+            ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+
+        m_uv_and_depth_gradient_image_ptr = Image::create(move(image_create_info_ptr));
+        m_uv_and_depth_gradient_image_ptr->set_name("UV and depth gradient image");
+
+        allocator_ptr->add_image_whole(
+            m_uv_and_depth_gradient_image_ptr.get(),
+            MemoryFeatureFlagBits::DEVICE_LOCAL_BIT);
+    }
+    #pragma endregion
+
+    #pragma region 创建UV梯度图像
+    {
+        auto image_create_info_ptr = ImageCreateInfo::create_no_alloc(
+            m_device_ptr.get(),
+            ImageType::_2D,
+            Format::R16G16B16A16_SNORM,
+            ImageTiling::OPTIMAL,
+            ImageUsageFlagBits::COLOR_ATTACHMENT_BIT
+            | ImageUsageFlagBits::SAMPLED_BIT,
+            m_width,
+            m_height,
+            1,
+            1,
+            SampleCountFlagBits::_1_BIT,
+            QueueFamilyFlagBits::COMPUTE_BIT | QueueFamilyFlagBits::GRAPHICS_BIT,
+            SharingMode::EXCLUSIVE,
+            false,
+            ImageCreateFlagBits::NONE,
+            ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+
+        m_uv_gradient_image_ptr = Image::create(move(image_create_info_ptr));
+        m_uv_gradient_image_ptr->set_name("UV gradient image");
+
+        allocator_ptr->add_image_whole(
+            m_uv_gradient_image_ptr.get(),
+            MemoryFeatureFlagBits::DEVICE_LOCAL_BIT);
+    }
+    #pragma endregion
+
+    #pragma region 创建材质ID图像
+    {
+        auto image_create_info_ptr = ImageCreateInfo::create_no_alloc(
+            m_device_ptr.get(),
+            ImageType::_2D,
+            Format::R8_UINT,
+            ImageTiling::OPTIMAL,
+            ImageUsageFlagBits::COLOR_ATTACHMENT_BIT
+            | ImageUsageFlagBits::SAMPLED_BIT,
+            m_width,
+            m_height,
+            1,
+            1,
+            SampleCountFlagBits::_1_BIT,
+            QueueFamilyFlagBits::COMPUTE_BIT | QueueFamilyFlagBits::GRAPHICS_BIT,
+            SharingMode::EXCLUSIVE,
+            false,
+            ImageCreateFlagBits::NONE,
+            ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+
+        m_material_id_image_ptr = Image::create(move(image_create_info_ptr));
+        m_material_id_image_ptr->set_name("material id image");
+
+        allocator_ptr->add_image_whole(
+            m_material_id_image_ptr.get(),
+            MemoryFeatureFlagBits::DEVICE_LOCAL_BIT);
+    }
+    #pragma endregion
+}
+
+void Engine::init_image_view_and_sampler()
+{
+    #pragma region 创建深度图像视图
+    {
+        auto image_view_create_info_ptr = ImageViewCreateInfo::create_2D(
+            m_device_ptr.get(),
+            m_depth_image_ptr.get(),
+            0,
+            0,
+            1,
+            ImageAspectFlagBits::DEPTH_BIT,
+            m_depth_format,
+            ComponentSwizzle::R,
+            ComponentSwizzle::G,
+            ComponentSwizzle::B,
+            ComponentSwizzle::A);
+
+        m_depth_image_view_ptr = ImageView::create(move(image_view_create_info_ptr));
+    }
+    #pragma endregion
+
+    #pragma region 创建切线框架图像视图
+    {
+        auto image_view_create_info_ptr = ImageViewCreateInfo::create_2D(
+            m_device_ptr.get(),
+            m_tangent_frame_image_ptr.get(),
+            0,
+            0,
+            1,
+            ImageAspectFlagBits::COLOR_BIT,
+            Format::A2B10G10R10_UNORM_PACK32,
+            ComponentSwizzle::R,
+            ComponentSwizzle::G,
+            ComponentSwizzle::B,
+            ComponentSwizzle::A);
+
+        m_tangent_frame_image_view_ptr = ImageView::create(move(image_view_create_info_ptr));
+    }
+    #pragma endregion
+
+    #pragma region 创建UV和深度梯度图像视图
+    {
+        auto image_view_create_info_ptr = ImageViewCreateInfo::create_2D(
+            m_device_ptr.get(),
+            m_uv_and_depth_gradient_image_ptr.get(),
+            0,
+            0,
+            1,
+            ImageAspectFlagBits::COLOR_BIT,
+            Format::R16G16B16A16_SNORM,
+            ComponentSwizzle::R,
+            ComponentSwizzle::G,
+            ComponentSwizzle::B,
+            ComponentSwizzle::A);
+
+        m_uv_and_depth_gradient_image_view_ptr = ImageView::create(move(image_view_create_info_ptr));
+    }
+    #pragma endregion
+
+    #pragma region 创建UV梯度图像视图
+    {
+        auto image_view_create_info_ptr = ImageViewCreateInfo::create_2D(
+            m_device_ptr.get(),
+            m_uv_gradient_image_ptr.get(),
+            0,
+            0,
+            1,
+            ImageAspectFlagBits::COLOR_BIT,
+            Format::R16G16B16A16_SNORM,
+            ComponentSwizzle::R,
+            ComponentSwizzle::G,
+            ComponentSwizzle::B,
+            ComponentSwizzle::A);
+
+        m_uv_gradient_image_view_ptr = ImageView::create(move(image_view_create_info_ptr));
+    }
+    #pragma endregion
+
+    #pragma region 创建材质ID图像视图
+    {
+        auto image_view_create_info_ptr = ImageViewCreateInfo::create_2D(
+            m_device_ptr.get(),
+            m_material_id_image_ptr.get(),
+            0,
+            0,
+            1,
+            ImageAspectFlagBits::COLOR_BIT,
+            Format::R8_UINT,
+            ComponentSwizzle::R,
+            ComponentSwizzle::IDENTITY,
+            ComponentSwizzle::IDENTITY,
+            ComponentSwizzle::IDENTITY);
+
+        m_material_id_image_view_ptr = ImageView::create(move(image_view_create_info_ptr));
+    }
+    #pragma endregion
+
+    #pragma region 创建sampler
+    auto sampler_create_info_ptr = SamplerCreateInfo::create(
+        Engine::Instance()->getDevice(),
+        Filter::LINEAR,
+        Filter::LINEAR,
+        SamplerMipmapMode::LINEAR,
+        SamplerAddressMode::MIRRORED_REPEAT,
+        SamplerAddressMode::MIRRORED_REPEAT,
+        SamplerAddressMode::MIRRORED_REPEAT,
+        0.0f,
+        16,
+        false,
+        CompareOp::ALWAYS,
+        0.0f,
+        1,
+        BorderColor::INT_OPAQUE_BLACK,
+        false);
+
+    m_compute_shader_sampler = Sampler::create(move(sampler_create_info_ptr));
+    #pragma endregion
+
+}
+
 void Engine::init_dsgs()
 {
-    auto dsg_create_info_ptrs = vector<DescriptorSetCreateInfoUniquePtr>(1 + m_model->get_texture_num());
+    #pragma region 创建描述符集群
+    auto dsg_create_info_ptrs = vector<DescriptorSetCreateInfoUniquePtr>(7);
 
     dsg_create_info_ptrs[0] = DescriptorSetCreateInfo::create();
     dsg_create_info_ptrs[0]->add_binding(
+        0, /* n_binding */
+        DescriptorType::COMBINED_IMAGE_SAMPLER,
+        m_model->get_texture_num(), /* n_elements */
+        ShaderStageFlagBits::COMPUTE_BIT);
+
+    dsg_create_info_ptrs[1] = DescriptorSetCreateInfo::create();
+    dsg_create_info_ptrs[1]->add_binding(
         0, /* n_binding */
         DescriptorType::UNIFORM_BUFFER_DYNAMIC,
         1, /* n_elements */
         ShaderStageFlagBits::VERTEX_BIT);
 
-    for (int i = 1; i < dsg_create_info_ptrs.size(); i++)
+    dsg_create_info_ptrs[2] = DescriptorSetCreateInfo::create();
+    for (int i = 0; i < 5; i++)
+    {
+        dsg_create_info_ptrs[2]->add_binding(
+            i, /* n_binding */
+            DescriptorType::COMBINED_IMAGE_SAMPLER,
+            1, /* n_elements */
+            ShaderStageFlagBits::COMPUTE_BIT);
+    }
+    
+    for (int i = 3; i < 3 + N_SWAPCHAIN_IMAGES; i++)
     {
         dsg_create_info_ptrs[i] = DescriptorSetCreateInfo::create();
         dsg_create_info_ptrs[i]->add_binding(
             0, /* n_binding */
-            DescriptorType::COMBINED_IMAGE_SAMPLER,
+            DescriptorType::STORAGE_IMAGE,
             1, /* n_elements */
-            ShaderStageFlagBits::FRAGMENT_BIT);
+            ShaderStageFlagBits::COMPUTE_BIT);
     }
-    
 
     m_dsg_ptr = DescriptorSetGroup::create(
         m_device_ptr.get(),
         dsg_create_info_ptrs);
+    #pragma endregion
+
+    #pragma region 为描述符集绑定具体资源
+    m_dsg_ptr->set_binding_array_items(
+        0, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
+        0, /* n_binding */
+        BindingElementArrayRange(
+            0,                                  /* StartBindingElementIndex */
+            m_combined_image_samplers.size()),  /* NumberOfBindingElements  */
+        m_combined_image_samplers.data());
 
     m_dsg_ptr->set_binding_item(
-        0, /* n_set     */
+        1, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
         0, /* n_binding */
         DescriptorSet::DynamicUniformBufferBindingElement(
             m_uniform_buffer_ptr.get(),
             0, /* in_start_offset */
             m_ub_data_size_per_swapchain_image));
 
-    m_model->set_dsg_binding_item(1);
+    
+    m_dsg_ptr->set_binding_item(
+        2, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
+        0, /* n_binding */
+        DescriptorSet::CombinedImageSamplerBindingElement(
+            ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            m_depth_image_view_ptr.get(),
+            m_compute_shader_sampler.get()));
+    
+    m_dsg_ptr->set_binding_item(
+        2, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
+        1, /* n_binding */
+        DescriptorSet::CombinedImageSamplerBindingElement(
+            ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            m_tangent_frame_image_view_ptr.get(),
+            m_compute_shader_sampler.get()));
+
+    m_dsg_ptr->set_binding_item(
+        2, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
+        2, /* n_binding */
+        DescriptorSet::CombinedImageSamplerBindingElement(
+            ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            m_uv_and_depth_gradient_image_view_ptr.get(),
+            m_compute_shader_sampler.get()));
+
+    m_dsg_ptr->set_binding_item(
+        2, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
+        3, /* n_binding */
+        DescriptorSet::CombinedImageSamplerBindingElement(
+            ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            m_uv_gradient_image_view_ptr.get(),
+            m_compute_shader_sampler.get()));
+
+    m_dsg_ptr->set_binding_item(
+        2, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
+        4, /* n_binding */
+        DescriptorSet::CombinedImageSamplerBindingElement(
+            ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            m_material_id_image_view_ptr.get(),
+            m_compute_shader_sampler.get()));
+
+    for (int i = 0; i < N_SWAPCHAIN_IMAGES; i++)
+    {
+        m_dsg_ptr->set_binding_item(
+            3 + i, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
+            0, /* n_binding */
+            DescriptorSet::StorageImageBindingElement(
+                ImageLayout::GENERAL,
+                m_swapchain_ptr->get_image_view(i)));
+    }
+    #pragma endregion
 }
 
 
 
 void Engine::init_render_pass()
 {
-    Anvil::RenderPassCreateInfoUniquePtr render_pass_create_info_ptr(new Anvil::RenderPassCreateInfo(m_device_ptr.get()));
+    RenderPassCreateInfoUniquePtr render_pass_create_info_ptr(new RenderPassCreateInfo(m_device_ptr.get()));
     
     #pragma region 添加附件描述
-    Anvil::RenderPassAttachmentID render_pass_color_attachment_id, render_pass_depth_attachment_id;
-    render_pass_create_info_ptr->add_color_attachment(
-        m_swapchain_ptr->get_create_info_ptr()->get_format(),
-        Anvil::SampleCountFlagBits::_1_BIT,
-        Anvil::AttachmentLoadOp::CLEAR,
-        Anvil::AttachmentStoreOp::STORE,
-        Anvil::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-        Anvil::ImageLayout::PRESENT_SRC_KHR,
-        false, /* may_alias */
-        &render_pass_color_attachment_id);
+    RenderPassAttachmentID 
+        render_pass_color_attachment_id, 
+        tangent_frame_color_attachment_id, 
+        uv_and_depth_gradient_color_attachment_id, 
+        uv_gradient_color_attachment_id, 
+        material_id_color_attachment_id, 
+        render_pass_depth_attachment_id;
     
-    m_depth_format = SelectSupportedFormat(
-        { Anvil::Format::D32_SFLOAT,  Anvil::Format::D32_SFLOAT_S8_UINT,  Anvil::Format::D24_UNORM_S8_UINT },
-        Anvil::ImageTiling::OPTIMAL,
-        Anvil::FormatFeatureFlagBits::DEPTH_STENCIL_ATTACHMENT_BIT);
+    render_pass_create_info_ptr->add_color_attachment(
+        Format::A2B10G10R10_UNORM_PACK32,
+        SampleCountFlagBits::_1_BIT,
+        AttachmentLoadOp::CLEAR,
+        AttachmentStoreOp::STORE,
+        ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        false, /* may_alias */
+        &tangent_frame_color_attachment_id);
+
+    render_pass_create_info_ptr->add_color_attachment(
+        Format::R16G16B16A16_SNORM,
+        SampleCountFlagBits::_1_BIT,
+        AttachmentLoadOp::CLEAR,
+        AttachmentStoreOp::STORE,
+        ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        false, /* may_alias */
+        &uv_and_depth_gradient_color_attachment_id);
+
+    render_pass_create_info_ptr->add_color_attachment(
+        Format::R16G16B16A16_SNORM,
+        SampleCountFlagBits::_1_BIT,
+        AttachmentLoadOp::CLEAR,
+        AttachmentStoreOp::STORE,
+        ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        false, /* may_alias */
+        &uv_gradient_color_attachment_id);
+
+    render_pass_create_info_ptr->add_color_attachment(
+        Format::R8_UINT,
+        SampleCountFlagBits::_1_BIT,
+        AttachmentLoadOp::CLEAR,
+        AttachmentStoreOp::STORE,
+        ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        false, /* may_alias */
+        &material_id_color_attachment_id);
+    
     render_pass_create_info_ptr->add_depth_stencil_attachment(
         m_depth_format,
-        Anvil::SampleCountFlagBits::_1_BIT,
-        Anvil::AttachmentLoadOp::CLEAR,
-        Anvil::AttachmentStoreOp::DONT_CARE,
-        Anvil::AttachmentLoadOp::DONT_CARE,
-        Anvil::AttachmentStoreOp::DONT_CARE,
-        Anvil::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-        Anvil::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        SampleCountFlagBits::_1_BIT,
+        AttachmentLoadOp::CLEAR,
+        AttachmentStoreOp::DONT_CARE,
+        AttachmentLoadOp::DONT_CARE,
+        AttachmentStoreOp::DONT_CARE,
+        ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
         false, /* may_alias */
         &render_pass_depth_attachment_id);
     #pragma endregion
 
-    #pragma region 为子流程添加附件引用
-    Anvil::SubPassID m_render_pass_subpass_id;
-    render_pass_create_info_ptr->add_subpass(&m_render_pass_subpass_id);
+    #pragma region 为子流程添加附件
+    {
+        render_pass_create_info_ptr->add_subpass(&m_render_pass_subpass_GBuffer_id);
 
-    render_pass_create_info_ptr->add_subpass_color_attachment(
-        m_render_pass_subpass_id,
-        Anvil::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-        render_pass_color_attachment_id,
-        0,        /* location                      */
-        nullptr); /* opt_attachment_resolve_id_ptr */  
+        render_pass_create_info_ptr->add_subpass_color_attachment(
+            m_render_pass_subpass_GBuffer_id,
+            ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            tangent_frame_color_attachment_id,
+            0,        /* location                      */
+            nullptr); /* opt_attachment_resolve_id_ptr */
+
+        render_pass_create_info_ptr->add_subpass_color_attachment(
+            m_render_pass_subpass_GBuffer_id,
+            ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            uv_and_depth_gradient_color_attachment_id,
+            1,        /* location                      */
+            nullptr); /* opt_attachment_resolve_id_ptr */
+
+        render_pass_create_info_ptr->add_subpass_color_attachment(
+            m_render_pass_subpass_GBuffer_id,
+            ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            uv_gradient_color_attachment_id,
+            2,        /* location                      */
+            nullptr); /* opt_attachment_resolve_id_ptr */
+
+        render_pass_create_info_ptr->add_subpass_color_attachment(
+            m_render_pass_subpass_GBuffer_id,
+            ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            material_id_color_attachment_id,
+            3,        /* location                      */
+            nullptr); /* opt_attachment_resolve_id_ptr */
    
-    render_pass_create_info_ptr->add_subpass_depth_stencil_attachment(
-        m_render_pass_subpass_id,
-        Anvil::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-        render_pass_depth_attachment_id);
+        render_pass_create_info_ptr->add_subpass_depth_stencil_attachment(
+            m_render_pass_subpass_GBuffer_id,
+            ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+            render_pass_depth_attachment_id);
+    }
     #pragma endregion
 
-    m_renderpass_ptr = Anvil::RenderPass::create(
-        std::move(render_pass_create_info_ptr),
+    m_renderpass_ptr = RenderPass::create(
+        move(render_pass_create_info_ptr),
         m_swapchain_ptr.get());
-    m_renderpass_ptr->set_name("Main renderpass");
+    m_renderpass_ptr->set_name("GBuffer renderpass");
+
 }
 
 void Engine::init_shaders()
 {
-    Anvil::GLSLShaderToSPIRVGeneratorUniquePtr fragment_shader_ptr;
-    Anvil::ShaderModuleUniquePtr               fragment_shader_module_ptr;
-    Anvil::GLSLShaderToSPIRVGeneratorUniquePtr vertex_shader_ptr;
-    Anvil::ShaderModuleUniquePtr               vertex_shader_module_ptr;
+    GLSLShaderToSPIRVGeneratorUniquePtr vertex_shader_ptr;
+    ShaderModuleUniquePtr               vertex_shader_module_ptr;
+    GLSLShaderToSPIRVGeneratorUniquePtr fragment_shader_ptr;
+    ShaderModuleUniquePtr               fragment_shader_module_ptr;
+    GLSLShaderToSPIRVGeneratorUniquePtr compute_shader_ptr;
+    ShaderModuleUniquePtr               compute_shader_module_ptr;
 
-    fragment_shader_ptr = Anvil::GLSLShaderToSPIRVGenerator::create(
+    vertex_shader_ptr = GLSLShaderToSPIRVGenerator::create(
         m_device_ptr.get(),
-        Anvil::GLSLShaderToSPIRVGenerator::MODE_LOAD_SOURCE_FROM_FILE,
-        "Assets/code/shader/test.frag",
-        Anvil::ShaderStage::FRAGMENT);
-    vertex_shader_ptr = Anvil::GLSLShaderToSPIRVGenerator::create(
+        GLSLShaderToSPIRVGenerator::MODE_LOAD_SOURCE_FROM_FILE,
+        "Assets/code/shader/GBuffer.vert",
+        ShaderStage::VERTEX);
+    fragment_shader_ptr = GLSLShaderToSPIRVGenerator::create(
         m_device_ptr.get(),
-        Anvil::GLSLShaderToSPIRVGenerator::MODE_LOAD_SOURCE_FROM_FILE,
-        "Assets/code/shader/test.vert",
-        Anvil::ShaderStage::VERTEX);
+        GLSLShaderToSPIRVGenerator::MODE_LOAD_SOURCE_FROM_FILE,
+        "Assets/code/shader/GBuffer.frag",
+        ShaderStage::FRAGMENT);
+    compute_shader_ptr = GLSLShaderToSPIRVGenerator::create(
+        m_device_ptr.get(),
+        GLSLShaderToSPIRVGenerator::MODE_LOAD_SOURCE_FROM_FILE,
+        "Assets/code/shader/deferred.comp",
+        ShaderStage::COMPUTE);
 
-    fragment_shader_module_ptr = Anvil::ShaderModule::create_from_spirv_generator(
-        m_device_ptr.get(),
-        fragment_shader_ptr.get());
-    vertex_shader_module_ptr = Anvil::ShaderModule::create_from_spirv_generator(
+    vertex_shader_module_ptr = ShaderModule::create_from_spirv_generator(
         m_device_ptr.get(),
         vertex_shader_ptr.get());
+    fragment_shader_module_ptr = ShaderModule::create_from_spirv_generator(
+        m_device_ptr.get(),
+        fragment_shader_ptr.get());
+    compute_shader_module_ptr = ShaderModule::create_from_spirv_generator(
+        m_device_ptr.get(),
+        compute_shader_ptr.get());
 
-    fragment_shader_module_ptr->set_name("Fragment shader module");
     vertex_shader_module_ptr->set_name("Vertex shader module");
+    fragment_shader_module_ptr->set_name("Fragment shader module");
+    compute_shader_module_ptr->set_name("Compute shader module");
 
-    m_fs_ptr.reset(
-        new Anvil::ShaderModuleStageEntryPoint(
-            "main",
-            std::move(fragment_shader_module_ptr),
-            Anvil::ShaderStage::FRAGMENT)
-    );
     m_vs_ptr.reset(
-        new Anvil::ShaderModuleStageEntryPoint(
+        new ShaderModuleStageEntryPoint(
             "main",
-            std::move(vertex_shader_module_ptr),
-            Anvil::ShaderStage::VERTEX)
+            move(vertex_shader_module_ptr),
+            ShaderStage::VERTEX)
+    );
+    m_fs_ptr.reset(
+        new ShaderModuleStageEntryPoint(
+            "main",
+            move(fragment_shader_module_ptr),
+            ShaderStage::FRAGMENT)
+    );
+    m_cs_ptr.reset(
+        new ShaderModuleStageEntryPoint(
+            "main",
+            move(compute_shader_module_ptr),
+            ShaderStage::COMPUTE)
     );
 }
 
 void Engine::init_gfx_pipelines()
 {
+    
     GraphicsPipelineCreateInfoUniquePtr gfx_pipeline_create_info_ptr;
     
     gfx_pipeline_create_info_ptr = GraphicsPipelineCreateInfo::create(
         PipelineCreateFlagBits::NONE,
         m_renderpass_ptr.get(), 
-        m_render_pass_subpass_id,
+        m_render_pass_subpass_GBuffer_id,
         *m_fs_ptr,
         ShaderModuleStageEntryPoint(), /* in_geometry_shader        */
         ShaderModuleStageEntryPoint(), /* in_tess_control_shader    */
         ShaderModuleStageEntryPoint(), /* in_tess_evaluation_shader */
         *m_vs_ptr);
 
-    gfx_pipeline_create_info_ptr->set_descriptor_set_create_info(m_dsg_ptr->get_descriptor_set_create_info());
-    
+    vector<const DescriptorSetCreateInfo*> m_desc_create_info;
+    m_desc_create_info.push_back(m_dsg_ptr->get_descriptor_set_create_info(1));
+    gfx_pipeline_create_info_ptr->set_descriptor_set_create_info(&m_desc_create_info);
+   
+    gfx_pipeline_create_info_ptr->attach_push_constant_range(
+        0, /* in_offset */
+        4, /* in_size */
+        Anvil::ShaderStageFlagBits::FRAGMENT_BIT);
+
     gfx_pipeline_create_info_ptr->set_rasterization_properties(
         PolygonMode::FILL,
         CullModeFlagBits::NONE,
@@ -432,113 +874,95 @@ void Engine::init_gfx_pipelines()
     auto gfx_pipeline_manager_ptr(m_device_ptr->get_graphics_pipeline_manager());
     gfx_pipeline_manager_ptr->add_pipeline(
         move(gfx_pipeline_create_info_ptr),
-        &m_pipeline_id);
+        &m_gfx_pipeline_id);
+    
 }
 
-
-
-void Engine::init_depth()
+void Engine::init_compute_pipelines()
 {
-    auto allocator_ptr = Anvil::MemoryAllocator::create_oneshot(m_device_ptr.get());
+    ComputePipelineCreateInfoUniquePtr compute_pipeline_create_info_ptr;
 
-    #pragma region 创建深度图像
-    auto create_info_ptr = Anvil::ImageCreateInfo::create_no_alloc(
-        m_device_ptr.get(),
-        Anvil::ImageType::_2D,
-        m_depth_format,
-        Anvil::ImageTiling::OPTIMAL,
-        Anvil::ImageUsageFlagBits::DEPTH_STENCIL_ATTACHMENT_BIT,
-        m_width,
-        m_height,
-        1,
-        1,
-        Anvil::SampleCountFlagBits::_1_BIT,
-        Anvil::QueueFamilyFlagBits::COMPUTE_BIT | Anvil::QueueFamilyFlagBits::GRAPHICS_BIT,
-        Anvil::SharingMode::EXCLUSIVE,
-        false,
-        Anvil::ImageCreateFlagBits::NONE,
-        Anvil::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+    compute_pipeline_create_info_ptr = ComputePipelineCreateInfo::create(
+        PipelineCreateFlagBits::NONE,
+        *m_cs_ptr);
 
-    m_depth_image_ptr = Anvil::Image::create(std::move(create_info_ptr));
-    m_depth_image_ptr->set_name("Depth image");
+    vector<const DescriptorSetCreateInfo*> m_desc_create_info;
+    m_desc_create_info.push_back(m_dsg_ptr->get_descriptor_set_create_info(0));
+    m_desc_create_info.push_back(m_dsg_ptr->get_descriptor_set_create_info(2));
+    m_desc_create_info.push_back(m_dsg_ptr->get_descriptor_set_create_info(3));
+    compute_pipeline_create_info_ptr->set_descriptor_set_create_info(&m_desc_create_info);
 
-    allocator_ptr->add_image_whole(
-        m_depth_image_ptr.get(),
-        Anvil::MemoryFeatureFlagBits::DEVICE_LOCAL_BIT);
-    #pragma endregion
-
-    #pragma region 创建深度图像视图
-    auto create_info_ptr2 = Anvil::ImageViewCreateInfo::create_2D(
-        m_device_ptr.get(),
-        m_depth_image_ptr.get(),
-        0,
-        0,
-        1,
-        Anvil::ImageAspectFlagBits::DEPTH_BIT,
-        m_depth_format,
-        Anvil::ComponentSwizzle::R,
-        Anvil::ComponentSwizzle::G,
-        Anvil::ComponentSwizzle::B,
-        Anvil::ComponentSwizzle::A);
-
-    m_depth_image_view_ptr = Anvil::ImageView::create(std::move(create_info_ptr2));
-    #pragma endregion
+    auto compute_pipeline_manager_ptr(m_device_ptr->get_compute_pipeline_manager());
+    compute_pipeline_manager_ptr->add_pipeline(
+        move(compute_pipeline_create_info_ptr),
+        &m_compute_pipeline_id);
 }
+
+
+
 
 void Engine::init_framebuffers()
 {
     bool result;
 
-    /* We need to instantiate 1 framebuffer object per each used swap-chain image */
-    for (uint32_t n_fbo = 0; n_fbo < N_SWAPCHAIN_IMAGES; ++n_fbo)
-    {
-        ImageView* attachment_image_view_ptr = nullptr;
+    auto create_info_ptr = FramebufferCreateInfo::create(
+        m_device_ptr.get(),
+        m_width,
+        m_height,
+        1 /* n_layers */);
+            
+    result = create_info_ptr->add_attachment(
+        m_tangent_frame_image_view_ptr.get(),
+        nullptr /* out_opt_attachment_id_ptr */);
+    anvil_assert(result);
 
-        attachment_image_view_ptr = m_swapchain_ptr->get_image_view(n_fbo);
+    result = create_info_ptr->add_attachment(
+        m_uv_and_depth_gradient_image_view_ptr.get(),
+        nullptr /* out_opt_attachment_id_ptr */);
+    anvil_assert(result);
 
-        /* Create the internal framebuffer object */
-        {
-            auto create_info_ptr = FramebufferCreateInfo::create(
-                m_device_ptr.get(),
-                m_width,
-                m_height,
-                1 /* n_layers */);
+    result = create_info_ptr->add_attachment(
+        m_uv_gradient_image_view_ptr.get(),
+        nullptr /* out_opt_attachment_id_ptr */);
+    anvil_assert(result);
 
-            result = create_info_ptr->add_attachment(
-                attachment_image_view_ptr,
-                nullptr /* out_opt_attachment_id_ptr */);
-            anvil_assert(result);
+    result = create_info_ptr->add_attachment(
+        m_material_id_image_view_ptr.get(),
+        nullptr /* out_opt_attachment_id_ptr */);
+    anvil_assert(result);
 
-            result = create_info_ptr->add_attachment(
-                m_depth_image_view_ptr.get(),
-                nullptr /* out_opt_attachment_id_ptr */);
-            anvil_assert(result);
+    result = create_info_ptr->add_attachment(
+        m_depth_image_view_ptr.get(),
+        nullptr /* out_opt_attachment_id_ptr */);
+    anvil_assert(result);
 
-            m_fbos[n_fbo] = Framebuffer::create(move(create_info_ptr));
-        }
-
-        m_fbos[n_fbo]->set_name_formatted(
-            "Framebuffer for swapchain image [%d]",
-            n_fbo);
-    }
+    m_fbo = Framebuffer::create(move(create_info_ptr));
+        
+    m_fbo->set_name_formatted("Framebuffer");
 }
 
 void Engine::init_command_buffers()
 {
-    auto                          gfx_pipeline_manager_ptr(m_device_ptr->get_graphics_pipeline_manager());
-    Anvil::ImageSubresourceRange  image_subresource_range;
-    std::unique_ptr<float[]>      luminance_data_ptr;
-    Anvil::Queue* universal_queue_ptr(m_device_ptr->get_universal_queue(0));
+    auto                   gfx_pipeline_manager_ptr(m_device_ptr->get_graphics_pipeline_manager());
+    ImageSubresourceRange  image_subresource_range, image_subresource_range2;
+    Queue*                 universal_queue_ptr(m_device_ptr->get_universal_queue(0));
 
-    image_subresource_range.aspect_mask = Anvil::ImageAspectFlagBits::COLOR_BIT;
+    image_subresource_range.aspect_mask = ImageAspectFlagBits::COLOR_BIT;
     image_subresource_range.base_array_layer = 0;
     image_subresource_range.base_mip_level = 0;
     image_subresource_range.layer_count = 1;
     image_subresource_range.level_count = 1;
 
+    image_subresource_range2.aspect_mask = ImageAspectFlagBits::DEPTH_BIT;
+    image_subresource_range2.base_array_layer = 0;
+    image_subresource_range2.base_mip_level = 0;
+    image_subresource_range2.layer_count = 1;
+    image_subresource_range2.level_count = 1;
+
     for (uint32_t n_command_buffer = 0; n_command_buffer < N_SWAPCHAIN_IMAGES; ++n_command_buffer)
     {
-        Anvil::PrimaryCommandBufferUniquePtr cmd_buffer_ptr;
+        #pragma region 开始记录指令
+        PrimaryCommandBufferUniquePtr cmd_buffer_ptr;
 
         cmd_buffer_ptr = m_device_ptr->
             get_command_pool_for_queue_family_index(m_device_ptr->get_universal_queue(0)->get_queue_family_index())
@@ -547,35 +971,12 @@ void Engine::init_command_buffers()
         /* Start recording commands */
         cmd_buffer_ptr->start_recording(false, /* one_time_submit          */
                                         true); /* simultaneous_use_allowed */
+        #pragma endregion
 
-        /* Switch the swap-chain image to the color_attachment_optimal image layout */
-        {
-            Anvil::ImageBarrier image_barrier(
-                Anvil::AccessFlagBits::NONE,                       /* source_access_mask       */
-                Anvil::AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT, /* destination_access_mask  */
-                Anvil::ImageLayout::UNDEFINED,                  /* old_image_layout */
-                Anvil::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,   /* new_image_layout */
-                universal_queue_ptr->get_queue_family_index(),
-                universal_queue_ptr->get_queue_family_index(),
-                m_swapchain_ptr->get_image(n_command_buffer),
-                image_subresource_range);
-
-            cmd_buffer_ptr->record_pipeline_barrier(
-                Anvil::PipelineStageFlagBits::TOP_OF_PIPE_BIT,            /* src_stage_mask                 */
-                Anvil::PipelineStageFlagBits::COLOR_ATTACHMENT_OUTPUT_BIT,/* dst_stage_mask                 */
-                Anvil::DependencyFlagBits::NONE,
-                0,                                                        /* in_memory_barrier_count        */
-                nullptr,                                                  /* in_memory_barrier_ptrs         */
-                0,                                                        /* in_buffer_memory_barrier_count */
-                nullptr,                                                  /* in_buffer_memory_barrier_ptrs  */
-                1,                                                        /* in_image_memory_barrier_count  */
-                &image_barrier);
-        }
-
-        /* Make sure CPU-written data is flushed before we start rendering */
-        Anvil::BufferBarrier buffer_barrier(
-            Anvil::AccessFlagBits::HOST_WRITE_BIT,                 /* in_source_access_mask      */
-            Anvil::AccessFlagBits::UNIFORM_READ_BIT,               /* in_destination_access_mask */
+        #pragma region 确保uniform缓冲已经写入
+        BufferBarrier buffer_barrier(
+            AccessFlagBits::HOST_WRITE_BIT,                 /* in_source_access_mask      */
+            AccessFlagBits::UNIFORM_READ_BIT,               /* in_destination_access_mask */
             universal_queue_ptr->get_queue_family_index(),         /* in_src_queue_family_index  */
             universal_queue_ptr->get_queue_family_index(),         /* in_dst_queue_family_index  */
             m_uniform_buffer_ptr.get(),
@@ -583,23 +984,110 @@ void Engine::init_command_buffers()
             m_ub_data_size_per_swapchain_image);
 
         cmd_buffer_ptr->record_pipeline_barrier(
-            Anvil::PipelineStageFlagBits::HOST_BIT,
-            Anvil::PipelineStageFlagBits::VERTEX_SHADER_BIT,
-            Anvil::DependencyFlagBits::NONE,
+            PipelineStageFlagBits::HOST_BIT,
+            PipelineStageFlagBits::VERTEX_SHADER_BIT,
+            DependencyFlagBits::NONE,
             0,               /* in_memory_barrier_count        */
             nullptr,         /* in_memory_barriers_ptr         */
             1,               /* in_buffer_memory_barrier_count */
             &buffer_barrier,
             0,               /* in_image_memory_barrier_count  */
             nullptr);        /* in_image_memory_barriers_ptr   */
+        #pragma endregion
 
-        /* 2. Render the geometry. */
-        std::array<VkClearValue, 2>       attachment_clear_value;
+        #pragma region 改变深度图像布局用于深度测试
+        ImageBarrier depth_test_image_barrier(
+            AccessFlagBits::SHADER_READ_BIT,                   /* source_access_mask       */
+            AccessFlagBits::DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                AccessFlagBits::DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,  /* destination_access_mask  */
+            ImageLayout::SHADER_READ_ONLY_OPTIMAL,              /* old_image_layout */
+            ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,      /* new_image_layout */
+            universal_queue_ptr->get_queue_family_index(),
+            universal_queue_ptr->get_queue_family_index(),
+            m_depth_image_ptr.get(),
+            image_subresource_range2);
+
+        cmd_buffer_ptr->record_pipeline_barrier(
+            PipelineStageFlagBits::COMPUTE_SHADER_BIT,                  /* src_stage_mask                 */
+            PipelineStageFlagBits::EARLY_FRAGMENT_TESTS_BIT,            /* dst_stage_mask                 */
+            DependencyFlagBits::NONE,
+            0,                                                        /* in_memory_barrier_count        */
+            nullptr,                                                  /* in_memory_barrier_ptrs         */
+            0,                                                        /* in_buffer_memory_barrier_count */
+            nullptr,                                                  /* in_buffer_memory_barrier_ptrs  */
+            1,                                                        /* in_image_memory_barrier_count  */
+            &depth_test_image_barrier);
+        #pragma endregion
+
+        #pragma region 改变附件图像布局用于片元着色器输出
+        vector<ImageBarrier> image_barriers;
+
+        image_barriers.push_back(
+            ImageBarrier(
+                AccessFlagBits::SHADER_READ_BIT,                    /* source_access_mask       */
+                AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT,         /* destination_access_mask  */
+                ImageLayout::SHADER_READ_ONLY_OPTIMAL,              /* old_image_layout */
+                ImageLayout::COLOR_ATTACHMENT_OPTIMAL,              /* new_image_layout */
+                universal_queue_ptr->get_queue_family_index(),
+                universal_queue_ptr->get_queue_family_index(),
+                m_tangent_frame_image_ptr.get(),
+                image_subresource_range));
+
+        image_barriers.push_back(
+            ImageBarrier(
+                AccessFlagBits::SHADER_READ_BIT,                    /* source_access_mask       */
+                AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT,         /* destination_access_mask  */
+                ImageLayout::SHADER_READ_ONLY_OPTIMAL,              /* old_image_layout */
+                ImageLayout::COLOR_ATTACHMENT_OPTIMAL,              /* new_image_layout */
+                universal_queue_ptr->get_queue_family_index(),
+                universal_queue_ptr->get_queue_family_index(),
+                m_uv_and_depth_gradient_image_ptr.get(),
+                image_subresource_range));
+
+        image_barriers.push_back(
+            ImageBarrier(
+                AccessFlagBits::SHADER_READ_BIT,                    /* source_access_mask       */
+                AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT,         /* destination_access_mask  */
+                ImageLayout::SHADER_READ_ONLY_OPTIMAL,              /* old_image_layout */
+                ImageLayout::COLOR_ATTACHMENT_OPTIMAL,              /* new_image_layout */
+                universal_queue_ptr->get_queue_family_index(),
+                universal_queue_ptr->get_queue_family_index(),
+                m_uv_gradient_image_ptr.get(),
+                image_subresource_range));
+
+        image_barriers.push_back(
+            ImageBarrier(
+                AccessFlagBits::SHADER_READ_BIT,                    /* source_access_mask       */
+                AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT,         /* destination_access_mask  */
+                ImageLayout::SHADER_READ_ONLY_OPTIMAL,              /* old_image_layout */
+                ImageLayout::COLOR_ATTACHMENT_OPTIMAL,              /* new_image_layout */
+                universal_queue_ptr->get_queue_family_index(),
+                universal_queue_ptr->get_queue_family_index(),
+                m_material_id_image_ptr.get(),
+                image_subresource_range));
+
+        cmd_buffer_ptr->record_pipeline_barrier(
+            PipelineStageFlagBits::COMPUTE_SHADER_BIT,                /* src_stage_mask                 */
+            PipelineStageFlagBits::COLOR_ATTACHMENT_OUTPUT_BIT,       /* dst_stage_mask                 */
+            DependencyFlagBits::NONE,
+            0,                                                        /* in_memory_barrier_count        */
+            nullptr,                                                  /* in_memory_barrier_ptrs         */
+            0,                                                        /* in_buffer_memory_barrier_count */
+            nullptr,                                                  /* in_buffer_memory_barrier_ptrs  */
+            image_barriers.size(),                                   /* in_image_memory_barrier_count  */
+            image_barriers.data());
+        #pragma endregion
+
+        #pragma region 渲染GBuffer
+        array<VkClearValue, 5>            attachment_clear_value;
         VkRect2D                          render_area;
         VkShaderStageFlags                shaderStageFlags = 0;
 
-        attachment_clear_value[0].color = { 0.0f, 0.0f, 0.0f, 1.0f };
-        attachment_clear_value[1].depthStencil = { 1.0f, 0 };
+        attachment_clear_value[0].color = { 0.0f, 0.0f, 0.0f, 0.0f };
+        attachment_clear_value[1].color = { 0.0f, 0.0f, 0.0f, 0.0f };
+        attachment_clear_value[2].color = { 0.0f, 0.0f, 0.0f, 0.0f };
+        attachment_clear_value[3].color = { uint32(0), uint32(0), uint32(0), uint32(0) };
+        attachment_clear_value[4].depthStencil = { 1.0f, 0 };
 
         render_area.extent.height = m_height;
         render_area.extent.width = m_width;
@@ -607,30 +1095,191 @@ void Engine::init_command_buffers()
         render_area.offset.y = 0;
 
         cmd_buffer_ptr->record_begin_render_pass(
-            2, /* in_n_clear_values */
+            5, /* in_n_clear_values */
             attachment_clear_value.data(),
-            m_fbos[n_command_buffer].get(),
+            m_fbo.get(),
             render_area,
             m_renderpass_ptr.get(),
             SubpassContents::INLINE);
-        {
-            const uint32_t        data_ub_offset = static_cast<uint32_t>(m_ub_data_size_per_swapchain_image * n_command_buffer);
-            DescriptorSet* ds_ptr[2];
-            ds_ptr[0] = m_dsg_ptr->get_descriptor_set(0);
+        
+        const uint32_t data_ub_offset = static_cast<uint32_t>(m_ub_data_size_per_swapchain_image * n_command_buffer);
+        DescriptorSet* ds_ptr[1] = { m_dsg_ptr->get_descriptor_set(1) };
 
-            cmd_buffer_ptr->record_bind_pipeline(
-                PipelineBindPoint::GRAPHICS,
-                m_pipeline_id);
+        cmd_buffer_ptr->record_bind_pipeline(
+            PipelineBindPoint::GRAPHICS,
+            m_gfx_pipeline_id);
 
-            m_model->draw(cmd_buffer_ptr.get(), ds_ptr, 1, data_ub_offset);
-            
-        }
+        cmd_buffer_ptr->record_bind_descriptor_sets(
+            PipelineBindPoint::GRAPHICS,
+            Engine::Instance()->getPineLine(),
+            0, /* firstSet */
+            1, /* setCount：传入的描述符集与shader中的set一一对应 */
+            ds_ptr,
+            1,                /* dynamicOffsetCount */
+            &data_ub_offset); /* pDynamicOffsets    */
+
+        m_model->draw(cmd_buffer_ptr.get());
         cmd_buffer_ptr->record_end_render_pass();
+        #pragma endregion
 
-        /* Close the recording process */
+        #pragma region 改变附件图像布局用于计算着色器读取
+        vector<ImageBarrier> image_barriers2;
+
+        image_barriers2.push_back(
+            ImageBarrier(
+                AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT, /* source_access_mask       */
+                AccessFlagBits::SHADER_READ_BIT,           /* destination_access_mask  */
+                ImageLayout::COLOR_ATTACHMENT_OPTIMAL,      /* old_image_layout */
+                ImageLayout::SHADER_READ_ONLY_OPTIMAL,      /* new_image_layout */
+                universal_queue_ptr->get_queue_family_index(),
+                universal_queue_ptr->get_queue_family_index(),
+                m_tangent_frame_image_ptr.get(),
+                image_subresource_range));
+
+        image_barriers2.push_back(
+            ImageBarrier(
+                AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT, /* source_access_mask       */
+                AccessFlagBits::SHADER_READ_BIT,           /* destination_access_mask  */
+                ImageLayout::COLOR_ATTACHMENT_OPTIMAL,      /* old_image_layout */
+                ImageLayout::SHADER_READ_ONLY_OPTIMAL,      /* new_image_layout */
+                universal_queue_ptr->get_queue_family_index(),
+                universal_queue_ptr->get_queue_family_index(),
+                m_uv_and_depth_gradient_image_ptr.get(),
+                image_subresource_range));
+
+        image_barriers2.push_back(
+            ImageBarrier(
+                AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT, /* source_access_mask       */
+                AccessFlagBits::SHADER_READ_BIT,           /* destination_access_mask  */
+                ImageLayout::COLOR_ATTACHMENT_OPTIMAL,      /* old_image_layout */
+                ImageLayout::SHADER_READ_ONLY_OPTIMAL,      /* new_image_layout */
+                universal_queue_ptr->get_queue_family_index(),
+                universal_queue_ptr->get_queue_family_index(),
+                m_uv_gradient_image_ptr.get(),
+                image_subresource_range));
+
+        image_barriers2.push_back(
+            ImageBarrier(
+                AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT, /* source_access_mask       */
+                AccessFlagBits::SHADER_READ_BIT,           /* destination_access_mask  */
+                ImageLayout::COLOR_ATTACHMENT_OPTIMAL,      /* old_image_layout */
+                ImageLayout::SHADER_READ_ONLY_OPTIMAL,      /* new_image_layout */
+                universal_queue_ptr->get_queue_family_index(),
+                universal_queue_ptr->get_queue_family_index(),
+                m_material_id_image_ptr.get(),
+                image_subresource_range));
+
+        cmd_buffer_ptr->record_pipeline_barrier(
+            PipelineStageFlagBits::COLOR_ATTACHMENT_OUTPUT_BIT,       /* src_stage_mask                 */
+            PipelineStageFlagBits::COMPUTE_SHADER_BIT,                /* dst_stage_mask                 */
+            DependencyFlagBits::NONE,
+            0,                                                        /* in_memory_barrier_count        */
+            nullptr,                                                  /* in_memory_barrier_ptrs         */
+            0,                                                        /* in_buffer_memory_barrier_count */
+            nullptr,                                                  /* in_buffer_memory_barrier_ptrs  */
+            image_barriers2.size(),                                  /* in_image_memory_barrier_count  */
+            image_barriers2.data());
+        #pragma endregion
+
+        #pragma region 改变深度图像布局用于计算着色器读取
+        ImageBarrier depth_read_image_barrier(
+            AccessFlagBits::DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                AccessFlagBits::DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,  /* source_access_mask       */
+            AccessFlagBits::SHADER_READ_BIT,                         /* destination_access_mask  */  
+            ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,                   /* old_image_layout */
+            ImageLayout::SHADER_READ_ONLY_OPTIMAL,           /* new_image_layout */
+            universal_queue_ptr->get_queue_family_index(),
+            universal_queue_ptr->get_queue_family_index(),
+            m_depth_image_ptr.get(),
+            image_subresource_range2);
+
+        cmd_buffer_ptr->record_pipeline_barrier(
+            PipelineStageFlagBits::LATE_FRAGMENT_TESTS_BIT,           /* src_stage_mask                 */
+            PipelineStageFlagBits::COMPUTE_SHADER_BIT,                /* dst_stage_mask                 */
+            DependencyFlagBits::NONE,
+            0,                                                        /* in_memory_barrier_count        */
+            nullptr,                                                  /* in_memory_barrier_ptrs         */
+            0,                                                        /* in_buffer_memory_barrier_count */
+            nullptr,                                                  /* in_buffer_memory_barrier_ptrs  */
+            1,                                                        /* in_image_memory_barrier_count  */
+            &depth_read_image_barrier);
+        #pragma endregion
+
+        #pragma region 改变交换链图像布局用于计算着色器写入
+        ImageBarrier write_image_barrier(
+            AccessFlagBits::NONE,                       /* source_access_mask       */
+            AccessFlagBits::SHADER_WRITE_BIT,           /* destination_access_mask  */
+            ImageLayout::UNDEFINED,                     /* old_image_layout */
+            ImageLayout::GENERAL,                       /* new_image_layout */
+            universal_queue_ptr->get_queue_family_index(),
+            universal_queue_ptr->get_queue_family_index(),
+            m_swapchain_ptr->get_image(n_command_buffer),
+            image_subresource_range);
+
+        cmd_buffer_ptr->record_pipeline_barrier(
+            PipelineStageFlagBits::ALL_COMMANDS_BIT,       /* src_stage_mask                 */
+            PipelineStageFlagBits::COMPUTE_SHADER_BIT,                /* dst_stage_mask                 */
+            DependencyFlagBits::NONE,
+            0,                                                        /* in_memory_barrier_count        */
+            nullptr,                                                  /* in_memory_barrier_ptrs         */
+            0,                                                        /* in_buffer_memory_barrier_count */
+            nullptr,                                                  /* in_buffer_memory_barrier_ptrs  */
+            1,                                                        /* in_image_memory_barrier_count  */
+            &write_image_barrier);
+        #pragma endregion
+
+        #pragma region 延迟纹理采样
+        cmd_buffer_ptr->record_bind_pipeline(
+            PipelineBindPoint::COMPUTE,
+            m_compute_pipeline_id);
+
+        DescriptorSet* ds2_ptr[3] = {
+            m_dsg_ptr->get_descriptor_set(0),
+            m_dsg_ptr->get_descriptor_set(2),
+            m_dsg_ptr->get_descriptor_set(3 + n_command_buffer) };
+
+        cmd_buffer_ptr->record_bind_descriptor_sets(
+            PipelineBindPoint::COMPUTE,
+            Engine::Instance()->getPineLine(false),
+            0, /* firstSet */
+            3, /* setCount：传入的描述符集与shader中的set一一对应 */
+            ds2_ptr,
+            0,                /* dynamicOffsetCount */
+            nullptr); /* pDynamicOffsets    */
+
+        cmd_buffer_ptr->record_dispatch(
+            (m_width + 7) / 8,
+            (m_height + 7) / 8,
+            1);
+        #pragma endregion
+
+        #pragma region 改变交换链图像布局用于呈现
+        ImageBarrier present_image_barrier(
+            AccessFlagBits::SHADER_WRITE_BIT,         /* source_access_mask       */
+            AccessFlagBits::NONE,                     /* destination_access_mask  */
+            ImageLayout::GENERAL,                     /* old_image_layout */
+            ImageLayout::PRESENT_SRC_KHR,             /* new_image_layout */
+            universal_queue_ptr->get_queue_family_index(),
+            universal_queue_ptr->get_queue_family_index(),
+            m_swapchain_ptr->get_image(n_command_buffer),
+            image_subresource_range);
+
+        cmd_buffer_ptr->record_pipeline_barrier(
+            PipelineStageFlagBits::COMPUTE_SHADER_BIT,                /* src_stage_mask                 */
+            PipelineStageFlagBits::BOTTOM_OF_PIPE_BIT,                /* dst_stage_mask                 */
+            DependencyFlagBits::NONE,
+            0,                                                        /* in_memory_barrier_count        */
+            nullptr,                                                  /* in_memory_barrier_ptrs         */
+            0,                                                        /* in_buffer_memory_barrier_count */
+            nullptr,                                                  /* in_buffer_memory_barrier_ptrs  */
+            1,                                                        /* in_image_memory_barrier_count  */
+            &present_image_barrier);
+        #pragma endregion
+
+        #pragma region 结束记录指令
         cmd_buffer_ptr->stop_recording();
-
-        m_command_buffers[n_command_buffer] = std::move(cmd_buffer_ptr);
+        m_command_buffers[n_command_buffer] = move(cmd_buffer_ptr);
+        #pragma endregion
     }
 }
 
@@ -644,13 +1293,13 @@ void Engine::init_semaphores()
         {
             auto create_info_ptr = Anvil::SemaphoreCreateInfo::create(m_device_ptr.get());
 
-            new_signal_semaphore_ptr = Anvil::Semaphore::create(std::move(create_info_ptr));
+            new_signal_semaphore_ptr = Anvil::Semaphore::create(move(create_info_ptr));
         }
 
         {
             auto create_info_ptr = Anvil::SemaphoreCreateInfo::create(m_device_ptr.get());
 
-            new_wait_semaphore_ptr = Anvil::Semaphore::create(std::move(create_info_ptr));
+            new_wait_semaphore_ptr = Anvil::Semaphore::create(move(create_info_ptr));
         }
 
         new_signal_semaphore_ptr->set_name_formatted("Signal semaphore [%d]",
@@ -658,8 +1307,8 @@ void Engine::init_semaphores()
         new_wait_semaphore_ptr->set_name_formatted("Wait semaphore [%d]",
             n_semaphore);
 
-        m_frame_signal_semaphores.push_back(std::move(new_signal_semaphore_ptr));
-        m_frame_wait_semaphores.push_back(std::move(new_wait_semaphore_ptr));
+        m_frame_signal_semaphores.push_back(move(new_signal_semaphore_ptr));
+        m_frame_wait_semaphores.push_back(move(new_wait_semaphore_ptr));
     }
 }
 
@@ -690,10 +1339,13 @@ void Engine::recreate_swapchain()
     cleanup_swapwhain();
 
     init_swapchain();
+    init_image();
+    init_image_view_and_sampler();
+    init_dsgs();
+    init_framebuffers();
     init_render_pass();
     init_gfx_pipelines();
-    init_depth();
-    init_framebuffers();
+    init_compute_pipelines();
     init_command_buffers();
 }
 #pragma endregion
@@ -773,7 +1425,7 @@ void Engine::draw_frame()
         else if (acquire_result != SwapchainOperationErrorCode::SUCCESS 
             && acquire_result != SwapchainOperationErrorCode::SUBOPTIMAL)
         {
-            throw std::runtime_error("failed to acquire swap chain image!");
+            throw runtime_error("failed to acquire swap chain image!");
         }
     }
 
@@ -794,7 +1446,8 @@ void Engine::draw_frame()
     {
         SwapchainOperationErrorCode present_result = SwapchainOperationErrorCode::DEVICE_LOST;
 
-        present_queue_ptr->present(m_swapchain_ptr.get(),
+        present_queue_ptr->present(
+            m_swapchain_ptr.get(),
             n_swapchain_image,
             1, /* n_wait_semaphores */
             &present_wait_semaphore_ptr,
@@ -807,17 +1460,17 @@ void Engine::draw_frame()
         }
         else if (present_result != SwapchainOperationErrorCode::SUCCESS)
         {
-            throw std::runtime_error("failed to present swap chain image!");
+            throw runtime_error("failed to present swap chain image!");
         }
     }
 }
 
 void Engine::update_data_ub_contents(uint32_t in_n_swapchain_image)
 {
-    static auto startTime = chrono::high_resolution_clock::now();
-
+    static auto lastTime = chrono::high_resolution_clock::now();
     auto currentTime = chrono::high_resolution_clock::now();
-    float time = chrono::duration<float, chrono::seconds::period>(currentTime - startTime).count();
+    float time = chrono::duration<float, chrono::seconds::period>(currentTime - lastTime).count();
+    lastTime = currentTime;
 
 
     if (m_key->IsPressed(KeyID::KEY_ID_FORWARD))
@@ -887,7 +1540,6 @@ void Engine::key_release_callback(CallbackArgument* argumentPtr)
 {
     m_key->SetReleased(reinterpret_cast<OnKeyCallbackArgument*>(argumentPtr)->key_id);
 }
-
 #pragma endregion
 
 #pragma region 卸载
@@ -900,23 +1552,46 @@ void Engine::cleanup_swapwhain()
 {
     auto gfx_pipeline_manager_ptr = m_device_ptr->get_graphics_pipeline_manager();
     Vulkan::vkDeviceWaitIdle(m_device_ptr->get_device_vk());
+    
+    m_compute_shader_sampler.reset();
 
     m_depth_image_view_ptr.reset();
+    m_tangent_frame_image_view_ptr.reset();
+    m_uv_and_depth_gradient_image_view_ptr.reset();
+    m_uv_gradient_image_view_ptr.reset();
+    m_material_id_image_view_ptr.reset();
+
     m_depth_image_ptr.reset();
+    m_tangent_frame_image_ptr.reset();
+    m_uv_and_depth_gradient_image_ptr.reset();
+    m_uv_gradient_image_ptr.reset();
+    m_material_id_image_ptr.reset();
 
     for (uint32_t n_swapchain_image = 0; n_swapchain_image < N_SWAPCHAIN_IMAGES; ++n_swapchain_image)
     {
         m_command_buffers[n_swapchain_image].reset();
-        m_fbos[n_swapchain_image].reset();
+    }
+    
+    m_fbo.reset();
+
+    if (m_gfx_pipeline_id != UINT32_MAX)
+    {
+        auto gfx_pipeline_manager_ptr = m_device_ptr->get_graphics_pipeline_manager();
+        gfx_pipeline_manager_ptr->delete_pipeline(m_gfx_pipeline_id);
+        m_gfx_pipeline_id = UINT32_MAX;
     }
 
-    if (m_pipeline_id != UINT32_MAX)
+    if (m_compute_pipeline_id != UINT32_MAX)
     {
-        gfx_pipeline_manager_ptr->delete_pipeline(m_pipeline_id);
-        m_pipeline_id = UINT32_MAX;
+        auto compute_pipeline_manager_ptr(m_device_ptr->get_compute_pipeline_manager());
+        compute_pipeline_manager_ptr->delete_pipeline(m_compute_pipeline_id);
+        m_compute_pipeline_id = UINT32_MAX;
     }
+    
     m_renderpass_ptr.reset();
     m_swapchain_ptr.reset();
+
+    m_dsg_ptr.reset();
 }
 
 void Engine::deinit()
@@ -928,7 +1603,6 @@ void Engine::deinit()
 
     m_rendering_surface_ptr.reset();
     
-    m_dsg_ptr.reset();
     m_uniform_buffer_ptr.reset();
     m_fs_ptr.reset();
     m_vs_ptr.reset();
@@ -948,13 +1622,13 @@ void Engine::on_validation_callback(Anvil::DebugMessageSeverityFlags in_severity
     if ((in_severity & Anvil::DebugMessageSeverityFlagBits::ERROR_BIT) != 0)
     {
         fprintf(stderr,
-            "[!] %s\n",
+            "[!] %s\n\n",
             in_message_ptr);
     }
 }
 
 Anvil::Format Engine::SelectSupportedFormat(
-    const std::vector<Anvil::Format>& candidates,
+    const vector<Anvil::Format>& candidates,
     Anvil::ImageTiling tiling,
     Anvil::FormatFeatureFlags features)
 {
@@ -971,6 +1645,6 @@ Anvil::Format Engine::SelectSupportedFormat(
             return format;
         }
     }
-    throw std::runtime_error("failed to find supported format!");
+    throw runtime_error("failed to find supported format!");
 }
 #pragma endregion

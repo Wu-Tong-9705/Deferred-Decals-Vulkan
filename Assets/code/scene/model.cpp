@@ -67,18 +67,18 @@ int Model::get_texture_num()
 	return m_textures.size();
 }
 
-void Model::set_dsg_binding_item(int first)
+void Model::add_combined_image_samplers()
 {
 	for (int i = 0; i < m_textures.size(); i++)
 	{
-		m_textures[i]->set_dsg_binding_item(i + first);
+		m_textures[i]->add_combined_image_sampler();
 	}
 }
 
-void Model::draw(PrimaryCommandBuffer* cmd_buffer_ptr, DescriptorSet* ds_ptr[2], int first, uint32_t data_ub_offset)
+void Model::draw(PrimaryCommandBuffer* cmd_buffer_ptr)
 {
 	for (int i = 0; i < m_meshes.size(); i++)
 	{
-		m_meshes[i]->draw(cmd_buffer_ptr, ds_ptr, first, data_ub_offset);
+		m_meshes[i]->draw(cmd_buffer_ptr);
 	}
 }

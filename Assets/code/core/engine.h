@@ -18,8 +18,8 @@ public:
     void run ();
 
     BaseDevice* getDevice();
-    PipelineLayout* getPineLine();
-    DescriptorSetGroup* getDsg();
+    PipelineLayout* getPineLine(bool is_gfx = true);
+    vector<DescriptorSet::CombinedImageSamplerBindingElement>* getCombinedImageSamplers();
     float getAspect();
 
     ~Engine();
@@ -46,12 +46,14 @@ private:
     void init_render_pass    ();
     void init_shaders        ();
     void init_gfx_pipelines  ();
+    void init_compute_pipelines();
     
     Format SelectSupportedFormat(
         const vector<Format>& candidates,
         ImageTiling tiling,
         FormatFeatureFlags features);
-    void init_depth          ();
+    void init_image          ();
+    void init_image_view_and_sampler     ();
     void init_framebuffers   ();
     void init_command_buffers();
 
@@ -63,7 +65,6 @@ private:
     void deinit              ();
 
     void init_events         ();
-
 
     shared_ptr<Model>         m_model;
     shared_ptr<Camera>        m_camera;
@@ -79,27 +80,42 @@ private:
     VkDeviceSize              m_ub_data_size_per_swapchain_image;
     WindowUniquePtr           m_window_ptr;
 
+    vector<DescriptorSet::CombinedImageSamplerBindingElement> m_combined_image_samplers;
     BufferUniquePtr                              m_uniform_buffer_ptr;
     DescriptorSetGroupUniquePtr                  m_dsg_ptr;
 
 
     RenderPassUniquePtr                          m_renderpass_ptr;
-    SubPassID                                    m_render_pass_subpass_id;
+    SubPassID                                    m_render_pass_subpass_GBuffer_id;
     unique_ptr<ShaderModuleStageEntryPoint>      m_vs_ptr;
     unique_ptr<ShaderModuleStageEntryPoint>      m_fs_ptr;
-    PipelineID                                   m_pipeline_id;
+    unique_ptr<ShaderModuleStageEntryPoint>      m_cs_ptr;
+
+    PipelineID                                   m_gfx_pipeline_id;
+    PipelineID                                   m_compute_pipeline_id;
 
 
+    vector<DescriptorSet::StorageImageBindingElement>   m_color_image_ptr;
     ImageUniquePtr                               m_depth_image_ptr;
     ImageViewUniquePtr                           m_depth_image_view_ptr;
-    FramebufferUniquePtr                         m_fbos[N_SWAPCHAIN_IMAGES];
+    ImageUniquePtr                               m_tangent_frame_image_ptr;
+    ImageViewUniquePtr                           m_tangent_frame_image_view_ptr;
+    ImageUniquePtr                               m_uv_and_depth_gradient_image_ptr;
+    ImageViewUniquePtr                           m_uv_and_depth_gradient_image_view_ptr;
+    ImageUniquePtr                               m_uv_gradient_image_ptr;
+    ImageViewUniquePtr                           m_uv_gradient_image_view_ptr;
+    ImageUniquePtr                               m_material_id_image_ptr;
+    ImageViewUniquePtr                           m_material_id_image_view_ptr;
+    SamplerUniquePtr                             m_compute_shader_sampler;
+
+    FramebufferUniquePtr                         m_fbo;
     PrimaryCommandBufferUniquePtr                m_command_buffers[N_SWAPCHAIN_IMAGES];
 
 
     uint32_t       m_n_last_semaphore_used;
     const uint32_t m_n_swapchain_images;
     uint32_t       m_mipLevels;
-    Format  m_depth_format;
+    Format         m_depth_format;
 
     vector<SemaphoreUniquePtr> m_frame_signal_semaphores;
     vector<SemaphoreUniquePtr> m_frame_wait_semaphores;
@@ -108,4 +124,6 @@ private:
     int m_height;
     bool m_is_full_screen;
     RECT m_rect_before_full_screen;
+
+    uint32_t n[N_SWAPCHAIN_IMAGES] = { 0,1,2 };
 };

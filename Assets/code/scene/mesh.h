@@ -7,7 +7,7 @@ class Mesh
 public:
 	Mesh(const aiMesh* mesh, int i);
 	void set_material(shared_ptr<Material> material);
-	void draw(PrimaryCommandBuffer* cmd_buffer_ptr, DescriptorSet* ds_ptr[2], int first, uint32_t data_ub_offset);
+	void draw(PrimaryCommandBuffer* cmd_buffer_ptr);
 
 	~Mesh();
 

@@ -18,6 +18,7 @@ using namespace std;
 #include "misc/buffer_create_info.h"
 #include "misc/framebuffer_create_info.h"
 #include "misc/graphics_pipeline_create_info.h"
+#include "misc/compute_pipeline_create_info.h"
 #include "misc/image_create_info.h"
 #include "misc/image_view_create_info.h"
 #include "misc/sampler_create_info.h"
@@ -34,6 +35,7 @@ using namespace std;
 #include "wrappers/device.h"
 #include "wrappers/event.h"
 #include "wrappers/graphics_pipeline_manager.h"
+#include "wrappers/compute_pipeline_manager.h"
 #include "wrappers/framebuffer.h"
 #include "wrappers/image.h"
 #include "wrappers/image_view.h"
@@ -67,26 +69,38 @@ struct Vertex
     alignas(16) vec3 pos;
     alignas(16) vec3 normal;
     alignas(16) vec2 texCoord;
+    alignas(16) vec3 tangent;
+    alignas(16) vec3 bitangent;
 
     //属性描述：顶点着色器如何从顶点数据中提取顶点属性
-    static array<VertexInputAttribute, 3> getVertexInputAttribute()
+    static array<VertexInputAttribute, 5> getVertexInputAttribute()
     {
-        array<VertexInputAttribute, 3> vertexInputAttributes = {};
+        array<VertexInputAttribute, 5> vertexInputAttributes = {};
 
-        vertexInputAttributes[0] = Anvil::VertexInputAttribute(
+        vertexInputAttributes[0] = VertexInputAttribute(
             0, /* in_location */
-            Anvil::Format::R32G32B32_SFLOAT,
+            Format::R32G32B32_SFLOAT,
             offsetof(Vertex, pos));
 
-        vertexInputAttributes[1] = Anvil::VertexInputAttribute(
+        vertexInputAttributes[1] = VertexInputAttribute(
             1, /* in_location */
-            Anvil::Format::R32G32B32_SFLOAT,
+            Format::R32G32B32_SFLOAT,
             offsetof(Vertex, normal));
 
-        vertexInputAttributes[2] = Anvil::VertexInputAttribute(
+        vertexInputAttributes[2] = VertexInputAttribute(
             2, /* in_location */
-            Anvil::Format::R32G32_SFLOAT,
+            Format::R32G32_SFLOAT,
             offsetof(Vertex, texCoord));
+
+        vertexInputAttributes[3] = VertexInputAttribute(
+            3, /* in_location */
+            Format::R32G32B32_SFLOAT,
+            offsetof(Vertex, tangent));
+
+        vertexInputAttributes[4] = VertexInputAttribute(
+            4, /* in_location */
+            Format::R32G32B32_SFLOAT,
+            offsetof(Vertex, bitangent));
 
         return vertexInputAttributes;
     }
@@ -94,7 +108,12 @@ struct Vertex
     //重载赋值运算符
     bool operator==(const Vertex& other) const
     {
-        return pos == other.pos && normal == other.normal && texCoord == other.texCoord;
+        return
+            pos == other.pos &&
+            normal == other.normal &&
+            texCoord == other.texCoord &&
+            tangent == other.tangent &&
+            bitangent == other.bitangent;
     }
 };
 struct MVP
