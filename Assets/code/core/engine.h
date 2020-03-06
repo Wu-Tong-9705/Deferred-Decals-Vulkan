@@ -4,6 +4,31 @@
 #include "../support/keys.h"
 #include "../scene/model.h"
 #define N_SWAPCHAIN_IMAGES (3)
+
+struct MVPUniform
+{
+    alignas(16) mat4 model;
+    alignas(16) mat4 view;
+    alignas(16) mat4 proj;
+};
+
+struct DeferredConstants
+{
+    vec2 RTSize;
+};
+
+struct SunLightUniform
+{
+    vec3 SunDirectionWS;
+    vec3 SunIrradiance;
+};
+
+struct CameraUniform
+{
+    vec3 CameraPosWS;
+    mat4 InvViewProj;
+};
+
 class Engine
 {
 public:
@@ -58,7 +83,7 @@ private:
     void init_command_buffers();
 
     void init_semaphores     ();
-    void update_data_ub_contents(uint32_t in_n_swapchain_image);
+    void update_data(uint32_t in_n_swapchain_image);
     void draw_frame          ();
 
     void cleanup_swapwhain   ();
@@ -77,11 +102,10 @@ private:
     Queue*                    m_present_queue_ptr;
     RenderingSurfaceUniquePtr m_rendering_surface_ptr;
     SwapchainUniquePtr        m_swapchain_ptr;
-    VkDeviceSize              m_ub_data_size_per_swapchain_image;
     WindowUniquePtr           m_window_ptr;
 
     vector<DescriptorSet::CombinedImageSamplerBindingElement> m_combined_image_samplers;
-    BufferUniquePtr                              m_uniform_buffer_ptr;
+
     DescriptorSetGroupUniquePtr                  m_dsg_ptr;
 
 
@@ -113,8 +137,6 @@ private:
 
 
     uint32_t       m_n_last_semaphore_used;
-    const uint32_t m_n_swapchain_images;
-    uint32_t       m_mipLevels;
     Format         m_depth_format;
 
     vector<SemaphoreUniquePtr> m_frame_signal_semaphores;
@@ -125,5 +147,12 @@ private:
     bool m_is_full_screen;
     RECT m_rect_before_full_screen;
 
-    uint32_t n[N_SWAPCHAIN_IMAGES] = { 0,1,2 };
+    DeferredConstants         m_deferred_constants;
+    BufferUniquePtr           m_mvp_uniform_buffer_ptr;
+    VkDeviceSize              m_mvp_buffer_size_per_swapchain_image;
+    BufferUniquePtr           m_camera_uniform_buffer_ptr;
+    VkDeviceSize              m_camera_buffer_size_per_swapchain_image;
+    BufferUniquePtr           m_sunLight_uniform_buffer_ptr;
+    VkDeviceSize              m_sunLight_buffer_size_per_swapchain_image;
+
 };

@@ -50,8 +50,7 @@ float Engine::getAspect()
 #pragma region 初始化
 Engine::Engine()
     :m_n_last_semaphore_used           (0),
-     m_n_swapchain_images              (N_SWAPCHAIN_IMAGES),
-     m_ub_data_size_per_swapchain_image(0),
+     m_mvp_buffer_size_per_swapchain_image(0),
      m_is_full_screen                  (false),
      m_width                           (1280),
      m_height                          (720)
@@ -70,7 +69,7 @@ void Engine::init()
     init_window();
     init_swapchain();
 
-    m_model = make_shared<Model>("assets/models/girls/3/girl.obj");
+    m_model = make_shared<Model>("assets/models/Sponza/Sponza.fbx");
 
     init_buffers();
     init_image();
@@ -206,7 +205,7 @@ void Engine::init_swapchain()
         ColorSpaceKHR::SRGB_NONLINEAR_KHR,
         PresentModeKHR::FIFO_KHR,
         ImageUsageFlagBits::COLOR_ATTACHMENT_BIT | ImageUsageFlagBits::STORAGE_BIT,
-        m_n_swapchain_images);
+        N_SWAPCHAIN_IMAGES);
 
     m_swapchain_ptr->set_name("Main swapchain");
     m_width = m_swapchain_ptr->get_width();
@@ -231,28 +230,74 @@ void Engine::init_swapchain()
 
 void Engine::init_buffers()
 {
-    auto allocator_ptr = Anvil::MemoryAllocator::create_oneshot(m_device_ptr.get());
+    auto allocator_ptr = MemoryAllocator::create_oneshot(m_device_ptr.get());
 
-    #pragma region 创建uniform缓冲
-    const VkDeviceSize ub_data_size_per_swapchain_image = sizeof(MVP);
     const auto ub_data_alignment_requirement = m_device_ptr->get_physical_device_properties().core_vk1_0_properties_ptr->limits.min_uniform_buffer_offset_alignment;
-    m_ub_data_size_per_swapchain_image = Anvil::Utils::round_up(ub_data_size_per_swapchain_image, ub_data_alignment_requirement);
-    const auto ub_data_size_total = N_SWAPCHAIN_IMAGES * m_ub_data_size_per_swapchain_image;
+    
+    #pragma region 创建mvp缓冲
+    {
+        m_mvp_buffer_size_per_swapchain_image = Utils::round_up(sizeof(MVPUniform), ub_data_alignment_requirement);
+        const auto ub_data_size_total = N_SWAPCHAIN_IMAGES * m_mvp_buffer_size_per_swapchain_image;
 
-    auto create_info_ptr = Anvil::BufferCreateInfo::create_no_alloc(
-        m_device_ptr.get(),
-        ub_data_size_total,
-        Anvil::QueueFamilyFlagBits::COMPUTE_BIT | Anvil::QueueFamilyFlagBits::GRAPHICS_BIT,
-        Anvil::SharingMode::EXCLUSIVE,
-        Anvil::BufferCreateFlagBits::NONE,
-        Anvil::BufferUsageFlagBits::UNIFORM_BUFFER_BIT);
-    m_uniform_buffer_ptr = Anvil::Buffer::create(std::move(create_info_ptr));
-    m_uniform_buffer_ptr->set_name("Unfiorm data buffer");
+        auto create_info_ptr = BufferCreateInfo::create_no_alloc(
+            m_device_ptr.get(),
+            ub_data_size_total,
+            QueueFamilyFlagBits::GRAPHICS_BIT,
+            SharingMode::EXCLUSIVE,
+            BufferCreateFlagBits::NONE,
+            BufferUsageFlagBits::UNIFORM_BUFFER_BIT);
+        m_mvp_uniform_buffer_ptr = Buffer::create(move(create_info_ptr));
+        m_mvp_uniform_buffer_ptr->set_name("MVP unfiorm buffer");
 
-    allocator_ptr->add_buffer(
-        m_uniform_buffer_ptr.get(),
-        Anvil::MemoryFeatureFlagBits::NONE); /* in_required_memory_features */
+        allocator_ptr->add_buffer(
+            m_mvp_uniform_buffer_ptr.get(),
+            MemoryFeatureFlagBits::NONE); /* in_required_memory_features */
+    }
     #pragma endregion
+
+    #pragma region 创建sunLight缓冲
+    {
+        m_sunLight_buffer_size_per_swapchain_image = Utils::round_up(sizeof(SunLightUniform), ub_data_alignment_requirement);
+        const auto ub_data_size_total = N_SWAPCHAIN_IMAGES * m_sunLight_buffer_size_per_swapchain_image;
+
+        auto create_info_ptr = BufferCreateInfo::create_no_alloc(
+            m_device_ptr.get(),
+            ub_data_size_total,
+            QueueFamilyFlagBits::GRAPHICS_BIT | QueueFamilyFlagBits::COMPUTE_BIT,
+            SharingMode::EXCLUSIVE,
+            BufferCreateFlagBits::NONE,
+            BufferUsageFlagBits::UNIFORM_BUFFER_BIT);
+        m_sunLight_uniform_buffer_ptr = Buffer::create(move(create_info_ptr));
+        m_sunLight_uniform_buffer_ptr->set_name("SunLight unfiorm buffer");
+
+        allocator_ptr->add_buffer(
+            m_sunLight_uniform_buffer_ptr.get(),
+            MemoryFeatureFlagBits::NONE); /* in_required_memory_features */
+    }
+    #pragma endregion
+
+    #pragma region 创建camera缓冲
+    {
+        m_camera_buffer_size_per_swapchain_image = Utils::round_up(sizeof(CameraUniform), ub_data_alignment_requirement);
+        const auto ub_data_size_total = N_SWAPCHAIN_IMAGES * m_camera_buffer_size_per_swapchain_image;
+
+        auto create_info_ptr = BufferCreateInfo::create_no_alloc(
+            m_device_ptr.get(),
+            ub_data_size_total,
+            QueueFamilyFlagBits::GRAPHICS_BIT | QueueFamilyFlagBits::COMPUTE_BIT,
+            SharingMode::EXCLUSIVE,
+            BufferCreateFlagBits::NONE,
+            BufferUsageFlagBits::UNIFORM_BUFFER_BIT);
+        m_camera_uniform_buffer_ptr = Buffer::create(move(create_info_ptr));
+        m_camera_uniform_buffer_ptr->set_name("Camera unfiorm buffer");
+
+        allocator_ptr->add_buffer(
+            m_camera_uniform_buffer_ptr.get(),
+            MemoryFeatureFlagBits::NONE); /* in_required_memory_features */
+    }
+    #pragma endregion
+
+
 }
 
 void Engine::init_image()
@@ -535,6 +580,7 @@ void Engine::init_dsgs()
     #pragma region 创建描述符集群
     auto dsg_create_info_ptrs = vector<DescriptorSetCreateInfoUniquePtr>(7);
 
+    //0:所有模型纹理
     dsg_create_info_ptrs[0] = DescriptorSetCreateInfo::create();
     dsg_create_info_ptrs[0]->add_binding(
         0, /* n_binding */
@@ -542,6 +588,7 @@ void Engine::init_dsgs()
         m_model->get_texture_num(), /* n_elements */
         ShaderStageFlagBits::COMPUTE_BIT);
 
+    //1:顶点着色器所需的MVP
     dsg_create_info_ptrs[1] = DescriptorSetCreateInfo::create();
     dsg_create_info_ptrs[1]->add_binding(
         0, /* n_binding */
@@ -549,17 +596,32 @@ void Engine::init_dsgs()
         1, /* n_elements */
         ShaderStageFlagBits::VERTEX_BIT);
 
+    //2:计算着色器所需的参数
     dsg_create_info_ptrs[2] = DescriptorSetCreateInfo::create();
+    dsg_create_info_ptrs[2]->add_binding(
+        0, /* n_binding */
+        DescriptorType::UNIFORM_BUFFER_DYNAMIC,
+        1, /* n_elements */
+        ShaderStageFlagBits::COMPUTE_BIT);
+    dsg_create_info_ptrs[2]->add_binding(
+        1, /* n_binding */
+        DescriptorType::UNIFORM_BUFFER_DYNAMIC,
+        1, /* n_elements */
+        ShaderStageFlagBits::COMPUTE_BIT);
+
+    //3:GBuffer
+    dsg_create_info_ptrs[3] = DescriptorSetCreateInfo::create();
     for (int i = 0; i < 5; i++)
     {
-        dsg_create_info_ptrs[2]->add_binding(
+        dsg_create_info_ptrs[3]->add_binding(
             i, /* n_binding */
             DescriptorType::COMBINED_IMAGE_SAMPLER,
             1, /* n_elements */
             ShaderStageFlagBits::COMPUTE_BIT);
     }
     
-    for (int i = 3; i < 3 + N_SWAPCHAIN_IMAGES; i++)
+    //4:交换链图像
+    for (int i = 4; i < 4 + N_SWAPCHAIN_IMAGES; i++)
     {
         dsg_create_info_ptrs[i] = DescriptorSetCreateInfo::create();
         dsg_create_info_ptrs[i]->add_binding(
@@ -575,6 +637,8 @@ void Engine::init_dsgs()
     #pragma endregion
 
     #pragma region 为描述符集绑定具体资源
+
+    #pragma region 0:所有模型纹理
     m_dsg_ptr->set_binding_array_items(
         0, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
         0, /* n_binding */
@@ -582,18 +646,39 @@ void Engine::init_dsgs()
             0,                                  /* StartBindingElementIndex */
             m_combined_image_samplers.size()),  /* NumberOfBindingElements  */
         m_combined_image_samplers.data());
+    #pragma endregion
 
+    #pragma region 1:顶点着色器所需的的MVP
     m_dsg_ptr->set_binding_item(
         1, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
         0, /* n_binding */
         DescriptorSet::DynamicUniformBufferBindingElement(
-            m_uniform_buffer_ptr.get(),
+            m_mvp_uniform_buffer_ptr.get(),
             0, /* in_start_offset */
-            m_ub_data_size_per_swapchain_image));
+            m_mvp_buffer_size_per_swapchain_image));
+    #pragma endregion
 
-    
+    #pragma region 2:计算着色器所需的参数
     m_dsg_ptr->set_binding_item(
         2, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
+        0, /* n_binding */
+        DescriptorSet::DynamicUniformBufferBindingElement(
+            m_sunLight_uniform_buffer_ptr.get(),
+            0, /* in_start_offset */
+            m_sunLight_buffer_size_per_swapchain_image));
+
+    m_dsg_ptr->set_binding_item(
+        2, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
+        1, /* n_binding */
+        DescriptorSet::DynamicUniformBufferBindingElement(
+            m_camera_uniform_buffer_ptr.get(),
+            0, /* in_start_offset */
+            m_camera_buffer_size_per_swapchain_image));
+    #pragma endregion
+
+    #pragma region 3:GBuffer
+    m_dsg_ptr->set_binding_item(
+        3, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
         0, /* n_binding */
         DescriptorSet::CombinedImageSamplerBindingElement(
             ImageLayout::SHADER_READ_ONLY_OPTIMAL,
@@ -601,7 +686,7 @@ void Engine::init_dsgs()
             m_compute_shader_sampler.get()));
     
     m_dsg_ptr->set_binding_item(
-        2, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
+        3, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
         1, /* n_binding */
         DescriptorSet::CombinedImageSamplerBindingElement(
             ImageLayout::SHADER_READ_ONLY_OPTIMAL,
@@ -609,7 +694,7 @@ void Engine::init_dsgs()
             m_compute_shader_sampler.get()));
 
     m_dsg_ptr->set_binding_item(
-        2, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
+        3, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
         2, /* n_binding */
         DescriptorSet::CombinedImageSamplerBindingElement(
             ImageLayout::SHADER_READ_ONLY_OPTIMAL,
@@ -617,7 +702,7 @@ void Engine::init_dsgs()
             m_compute_shader_sampler.get()));
 
     m_dsg_ptr->set_binding_item(
-        2, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
+        3, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
         3, /* n_binding */
         DescriptorSet::CombinedImageSamplerBindingElement(
             ImageLayout::SHADER_READ_ONLY_OPTIMAL,
@@ -625,22 +710,26 @@ void Engine::init_dsgs()
             m_compute_shader_sampler.get()));
 
     m_dsg_ptr->set_binding_item(
-        2, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
+        3, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
         4, /* n_binding */
         DescriptorSet::CombinedImageSamplerBindingElement(
             ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             m_material_id_image_view_ptr.get(),
             m_compute_shader_sampler.get()));
+    #pragma endregion
 
+    #pragma region 4:交换链图像
     for (int i = 0; i < N_SWAPCHAIN_IMAGES; i++)
     {
         m_dsg_ptr->set_binding_item(
-            3 + i, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
+            4 + i, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
             0, /* n_binding */
             DescriptorSet::StorageImageBindingElement(
                 ImageLayout::GENERAL,
                 m_swapchain_ptr->get_image_view(i)));
     }
+    #pragma endregion
+    
     #pragma endregion
 }
 
@@ -890,7 +979,12 @@ void Engine::init_compute_pipelines()
     m_desc_create_info.push_back(m_dsg_ptr->get_descriptor_set_create_info(0));
     m_desc_create_info.push_back(m_dsg_ptr->get_descriptor_set_create_info(2));
     m_desc_create_info.push_back(m_dsg_ptr->get_descriptor_set_create_info(3));
+    m_desc_create_info.push_back(m_dsg_ptr->get_descriptor_set_create_info(4));
     compute_pipeline_create_info_ptr->set_descriptor_set_create_info(&m_desc_create_info);
+    compute_pipeline_create_info_ptr->attach_push_constant_range(
+        0,
+        sizeof(m_deferred_constants),
+        ShaderStageFlagBits::COMPUTE_BIT);
 
     auto compute_pipeline_manager_ptr(m_device_ptr->get_compute_pipeline_manager());
     compute_pipeline_manager_ptr->add_pipeline(
@@ -979,9 +1073,9 @@ void Engine::init_command_buffers()
             AccessFlagBits::UNIFORM_READ_BIT,               /* in_destination_access_mask */
             universal_queue_ptr->get_queue_family_index(),         /* in_src_queue_family_index  */
             universal_queue_ptr->get_queue_family_index(),         /* in_dst_queue_family_index  */
-            m_uniform_buffer_ptr.get(),
-            m_ub_data_size_per_swapchain_image * n_command_buffer, /* in_offset                  */
-            m_ub_data_size_per_swapchain_image);
+            m_mvp_uniform_buffer_ptr.get(),
+            m_mvp_buffer_size_per_swapchain_image * n_command_buffer, /* in_offset                  */
+            m_mvp_buffer_size_per_swapchain_image);
 
         cmd_buffer_ptr->record_pipeline_barrier(
             PipelineStageFlagBits::HOST_BIT,
@@ -1086,7 +1180,7 @@ void Engine::init_command_buffers()
         attachment_clear_value[0].color = { 0.0f, 0.0f, 0.0f, 0.0f };
         attachment_clear_value[1].color = { 0.0f, 0.0f, 0.0f, 0.0f };
         attachment_clear_value[2].color = { 0.0f, 0.0f, 0.0f, 0.0f };
-        attachment_clear_value[3].color = { uint32(0), uint32(0), uint32(0), uint32(0) };
+        attachment_clear_value[3].color = { uint32(255), uint32(0), uint32(0), uint32(0) };
         attachment_clear_value[4].depthStencil = { 1.0f, 0 };
 
         render_area.extent.height = m_height;
@@ -1102,7 +1196,7 @@ void Engine::init_command_buffers()
             m_renderpass_ptr.get(),
             SubpassContents::INLINE);
         
-        const uint32_t data_ub_offset = static_cast<uint32_t>(m_ub_data_size_per_swapchain_image * n_command_buffer);
+        const uint32_t data_ub_offset = static_cast<uint32_t>(m_mvp_buffer_size_per_swapchain_image * n_command_buffer);
         DescriptorSet* ds_ptr[1] = { m_dsg_ptr->get_descriptor_set(1) };
 
         cmd_buffer_ptr->record_bind_pipeline(
@@ -1228,24 +1322,39 @@ void Engine::init_command_buffers()
             &write_image_barrier);
         #pragma endregion
 
-        #pragma region 延迟纹理采样
+        #pragma region 延迟纹理采样和光照
+        const uint32_t data_ub_offset2[] = {
+            static_cast<uint32_t>(m_sunLight_buffer_size_per_swapchain_image * n_command_buffer),
+            static_cast<uint32_t>(m_camera_buffer_size_per_swapchain_image * n_command_buffer)
+        };
+
         cmd_buffer_ptr->record_bind_pipeline(
             PipelineBindPoint::COMPUTE,
             m_compute_pipeline_id);
 
-        DescriptorSet* ds2_ptr[3] = {
+        DescriptorSet* ds2_ptr[4] = {
             m_dsg_ptr->get_descriptor_set(0),
             m_dsg_ptr->get_descriptor_set(2),
-            m_dsg_ptr->get_descriptor_set(3 + n_command_buffer) };
+            m_dsg_ptr->get_descriptor_set(3),
+            m_dsg_ptr->get_descriptor_set(4 + n_command_buffer) };
 
         cmd_buffer_ptr->record_bind_descriptor_sets(
             PipelineBindPoint::COMPUTE,
             Engine::Instance()->getPineLine(false),
             0, /* firstSet */
-            3, /* setCount：传入的描述符集与shader中的set一一对应 */
+            4, /* setCount：传入的描述符集与shader中的set一一对应 */
             ds2_ptr,
-            0,                /* dynamicOffsetCount */
-            nullptr); /* pDynamicOffsets    */
+            2,                /* dynamicOffsetCount */
+            data_ub_offset2); /* pDynamicOffsets    */
+
+        m_deferred_constants.RTSize.x = m_width;
+        m_deferred_constants.RTSize.y = m_height;
+        cmd_buffer_ptr->record_push_constants(
+            Engine::Instance()->getPineLine(false),
+            ShaderStageFlagBits::COMPUTE_BIT,
+            0, /* in_offset */
+            sizeof(DeferredConstants),
+            &m_deferred_constants);
 
         cmd_buffer_ptr->record_dispatch(
             (m_width + 7) / 8,
@@ -1285,7 +1394,7 @@ void Engine::init_command_buffers()
 
 void Engine::init_semaphores()
 {
-    for (uint32_t n_semaphore = 0; n_semaphore < m_n_swapchain_images; ++n_semaphore)
+    for (uint32_t n_semaphore = 0; n_semaphore < N_SWAPCHAIN_IMAGES; ++n_semaphore)
     {
         Anvil::SemaphoreUniquePtr new_signal_semaphore_ptr;
         Anvil::SemaphoreUniquePtr new_wait_semaphore_ptr;
@@ -1403,7 +1512,7 @@ void Engine::draw_frame()
     const PipelineStageFlags wait_stage_mask = PipelineStageFlagBits::ALL_COMMANDS_BIT;
 
     /* Determine the signal + wait semaphores to use for drawing this frame */
-    m_n_last_semaphore_used = (m_n_last_semaphore_used + 1) % m_n_swapchain_images;
+    m_n_last_semaphore_used = (m_n_last_semaphore_used + 1) % N_SWAPCHAIN_IMAGES;
 
     curr_frame_signal_semaphore_ptr = m_frame_signal_semaphores[m_n_last_semaphore_used].get();
     curr_frame_wait_semaphore_ptr = m_frame_wait_semaphores[m_n_last_semaphore_used].get();
@@ -1430,7 +1539,7 @@ void Engine::draw_frame()
     }
 
     /* Submit work chunk and present */
-    update_data_ub_contents(n_swapchain_image);
+    update_data(n_swapchain_image);
 
     present_queue_ptr->submit(
         SubmitInfo::create(
@@ -1465,8 +1574,9 @@ void Engine::draw_frame()
     }
 }
 
-void Engine::update_data_ub_contents(uint32_t in_n_swapchain_image)
+void Engine::update_data(uint32_t in_n_swapchain_image)
 {
+    static auto startTime = chrono::high_resolution_clock::now();
     static auto lastTime = chrono::high_resolution_clock::now();
     auto currentTime = chrono::high_resolution_clock::now();
     float time = chrono::duration<float, chrono::seconds::period>(currentTime - lastTime).count();
@@ -1482,18 +1592,35 @@ void Engine::update_data_ub_contents(uint32_t in_n_swapchain_image)
     if (m_key->IsPressed(KeyID::KEY_ID_RIGHT))
         m_camera->ProcessKeyboard(RIGHT, time);
 
-    MVP mvp = {};
+    MVPUniform mvp;
     mvp.model = rotate(mat4(1.0f), /*time * */radians(30.0f), vec3(0.0f, 1.0f, 0.0f))
         *scale(mat4(1.0f), vec3(0.015f, 0.015f, 0.015f));
-    mvp.view = Camera::Active()->GetViewMatrix();
-    mvp.proj = Camera::Active()->GetProjMatrix();
+    mvp.view = m_camera->GetViewMatrix();
+    mvp.proj = m_camera->GetProjMatrix();
 
-    m_uniform_buffer_ptr->write(
-        in_n_swapchain_image * m_ub_data_size_per_swapchain_image, /* start_offset */
+    m_mvp_uniform_buffer_ptr->write(
+        in_n_swapchain_image * m_mvp_buffer_size_per_swapchain_image, /* start_offset */
         sizeof(mvp),
         &mvp,
         m_device_ptr->get_universal_queue(0));
 
+    SunLightUniform sun_light;
+    sun_light.SunDirectionWS = vec3(0.9f, 0.9f, -0.2f);
+    sun_light.SunIrradiance = vec3(10.0f, 10.0f, 10.0f);
+    m_sunLight_uniform_buffer_ptr->write(
+        in_n_swapchain_image * m_sunLight_buffer_size_per_swapchain_image, /* start_offset */
+        sizeof(sun_light),
+        &sun_light,
+        m_device_ptr->get_universal_queue(0));
+
+    CameraUniform camera;
+    camera.CameraPosWS = m_camera->m_position;
+    camera.InvViewProj = inverse(mvp.proj * mvp.view);
+    m_camera_uniform_buffer_ptr->write(
+        in_n_swapchain_image * m_camera_buffer_size_per_swapchain_image, /* start_offset */
+        sizeof(camera),
+        &camera,
+        m_device_ptr->get_universal_queue(0));
 }
 
 void Engine::mouse_callback(CallbackArgument* argumentPtr)
@@ -1603,7 +1730,9 @@ void Engine::deinit()
 
     m_rendering_surface_ptr.reset();
     
-    m_uniform_buffer_ptr.reset();
+    m_mvp_uniform_buffer_ptr.reset();
+    m_sunLight_uniform_buffer_ptr.reset();
+    m_camera_uniform_buffer_ptr.reset();
     m_fs_ptr.reset();
     m_vs_ptr.reset();
 

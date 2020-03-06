@@ -116,12 +116,6 @@ struct Vertex
             bitangent == other.bitangent;
     }
 };
-struct MVP
-{
-    alignas(16) glm::mat4 model;
-    alignas(16) glm::mat4 view;
-    alignas(16) glm::mat4 proj;
-};
 
  //core
 #include "core/engine.h"
