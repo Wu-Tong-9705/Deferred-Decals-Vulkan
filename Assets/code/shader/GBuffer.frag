@@ -20,9 +20,9 @@ layout(location = 2) out vec4 outUVGradient;
 layout(location = 3) out uint outMaterialID;
 
 
-vec4 QuatFrom3x3(mat3x3 m)
+vec4 QuatFrom3x3(mat3 m)
 {
-	mat3x3 a = transpose(m);
+	mat3 a = transpose(m);
 	vec4 q;
 	float trace = a[0][0] + a[1][1] + a[2][2];
 	if(trace > 0)
@@ -109,8 +109,9 @@ void main()
 	float handedness = dot(bitangentWS, cross(normalWS, tangentWS)) > 0.0f ? 1.0f : -1.0f;
 	bitangentWS *= handedness;
 
-	vec4 tangentFrame = QuatFrom3x3(mat3x3(tangentWS, bitangentWS, normalWS));
-	outTangentFrame = PackQuaternion(tangentFrame);
+	//vec4 tangentFrame = QuatFrom3x3(mat3x3(tangentWS, bitangentWS, normalWS));
+	//outTangentFrame = PackQuaternion(tangentFrame);
+	outTangentFrame = vec4(normalWS,1.0f);
 
 	outUVandDepthGradient.xy = fract(inTexCoord / 2.0000f);
 	outUVandDepthGradient.zw = vec2(dFdx(gl_FragCoord.z), dFdy(gl_FragCoord.z));

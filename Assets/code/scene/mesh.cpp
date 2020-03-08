@@ -121,7 +121,7 @@ void Mesh::draw(PrimaryCommandBuffer* cmd_buffer_ptr)
 		ShaderStageFlagBits::FRAGMENT_BIT,
 		0, /* in_offset */
 		4,
-		m_material->get_texture_id());
+		m_material->get_material_id());
 
 	Buffer* buffer_raw_ptrs[] = { m_vertex_buffer_ptr.get() };
 	const VkDeviceSize buffer_offsets[] = { 0 };

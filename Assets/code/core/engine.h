@@ -44,7 +44,8 @@ public:
 
     BaseDevice* getDevice();
     PipelineLayout* getPineLine(bool is_gfx = true);
-    vector<DescriptorSet::CombinedImageSamplerBindingElement>* getCombinedImageSamplers();
+    Sampler* getSampler();
+    vector<DescriptorSet::CombinedImageSamplerBindingElement>* getTextureCombinedImageSamplersBinding();
     float getAspect();
 
     ~Engine();
@@ -78,7 +79,8 @@ private:
         ImageTiling tiling,
         FormatFeatureFlags features);
     void init_image          ();
-    void init_image_view_and_sampler     ();
+    void init_image_view();
+    void init_sampler();
     void init_framebuffers   ();
     void init_command_buffers();
 
@@ -104,7 +106,9 @@ private:
     SwapchainUniquePtr        m_swapchain_ptr;
     WindowUniquePtr           m_window_ptr;
 
-    vector<DescriptorSet::CombinedImageSamplerBindingElement> m_combined_image_samplers;
+    vector<DescriptorSet::CombinedImageSamplerBindingElement> m_texture_combined_image_samplers_binding;
+    
+    BufferUniquePtr m_texture_indices_uniform_buffer_ptr;
 
     DescriptorSetGroupUniquePtr                  m_dsg_ptr;
 
@@ -130,7 +134,7 @@ private:
     ImageViewUniquePtr                           m_uv_gradient_image_view_ptr;
     ImageUniquePtr                               m_material_id_image_ptr;
     ImageViewUniquePtr                           m_material_id_image_view_ptr;
-    SamplerUniquePtr                             m_compute_shader_sampler;
+    SamplerUniquePtr                             m_sampler;
 
     FramebufferUniquePtr                         m_fbo;
     PrimaryCommandBufferUniquePtr                m_command_buffers[N_SWAPCHAIN_IMAGES];

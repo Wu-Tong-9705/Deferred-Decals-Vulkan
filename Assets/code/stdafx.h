@@ -116,6 +116,13 @@ struct Vertex
             bitangent == other.bitangent;
     }
 };
+struct TextureIndicesUniform
+{
+    uint32_t albedo;
+    uint32_t normal;
+    uint32_t roughness;
+    uint32_t metallic;
+};
 
  //core
 #include "core/engine.h"

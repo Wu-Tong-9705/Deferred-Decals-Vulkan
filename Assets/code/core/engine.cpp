@@ -36,9 +36,14 @@ PipelineLayout* Engine::getPineLine(bool is_gfx)
     }
 }
 
-vector<DescriptorSet::CombinedImageSamplerBindingElement>* Engine::getCombinedImageSamplers()
+Sampler* Engine::getSampler()
 {
-    return &m_combined_image_samplers;
+    return m_sampler.get();
+}
+
+vector<DescriptorSet::CombinedImageSamplerBindingElement>* Engine::getTextureCombinedImageSamplersBinding()
+{
+    return &m_texture_combined_image_samplers_binding;
 }
 
 float Engine::getAspect()
@@ -69,11 +74,12 @@ void Engine::init()
     init_window();
     init_swapchain();
 
-    m_model = make_shared<Model>("assets/models/Sponza/Sponza.fbx");
 
+    m_model = make_shared<Model>("assets/models/Sponza/Sponza.fbx");
     init_buffers();
     init_image();
-    init_image_view_and_sampler();
+    init_image_view();
+    init_sampler();
     m_model->add_combined_image_samplers();
     init_dsgs();
 
@@ -231,9 +237,29 @@ void Engine::init_swapchain()
 void Engine::init_buffers()
 {
     auto allocator_ptr = MemoryAllocator::create_oneshot(m_device_ptr.get());
-
     const auto ub_data_alignment_requirement = m_device_ptr->get_physical_device_properties().core_vk1_0_properties_ptr->limits.min_uniform_buffer_offset_alignment;
     
+    #pragma region 创建texture_indices缓冲
+    {
+        VkDeviceSize size = Utils::round_up(
+            16 * m_model->get_texture_indices()->size(),
+            ub_data_alignment_requirement);
+        auto create_info_ptr = BufferCreateInfo::create_no_alloc(
+            m_device_ptr.get(),
+            size,
+            QueueFamilyFlagBits::GRAPHICS_BIT | QueueFamilyFlagBits::COMPUTE_BIT,
+            SharingMode::EXCLUSIVE,
+            BufferCreateFlagBits::NONE,
+            BufferUsageFlagBits::UNIFORM_BUFFER_BIT);
+        m_texture_indices_uniform_buffer_ptr = Buffer::create(move(create_info_ptr));
+        m_texture_indices_uniform_buffer_ptr->set_name_formatted("Texture indices unfiorm buffer");
+
+        allocator_ptr->add_buffer(
+            m_texture_indices_uniform_buffer_ptr.get(),
+            MemoryFeatureFlagBits::NONE); /* in_required_memory_features */
+    }
+    #pragma endregion
+
     #pragma region 创建mvp缓冲
     {
         m_mvp_buffer_size_per_swapchain_image = Utils::round_up(sizeof(MVPUniform), ub_data_alignment_requirement);
@@ -298,6 +324,11 @@ void Engine::init_buffers()
     #pragma endregion
 
 
+    m_texture_indices_uniform_buffer_ptr->write(
+        0, /* start_offset */
+        16 * m_model->get_texture_indices()->size(),
+        m_model->get_texture_indices()->data(),
+        m_device_ptr->get_universal_queue(0));
 }
 
 void Engine::init_image()
@@ -455,7 +486,7 @@ void Engine::init_image()
     #pragma endregion
 }
 
-void Engine::init_image_view_and_sampler()
+void Engine::init_image_view()
 {
     #pragma region 创建深度图像视图
     {
@@ -552,7 +583,10 @@ void Engine::init_image_view_and_sampler()
     }
     #pragma endregion
 
-    #pragma region 创建sampler
+}
+
+void Engine::init_sampler()
+{
     auto sampler_create_info_ptr = SamplerCreateInfo::create(
         Engine::Instance()->getDevice(),
         Filter::LINEAR,
@@ -570,9 +604,7 @@ void Engine::init_image_view_and_sampler()
         BorderColor::INT_OPAQUE_BLACK,
         false);
 
-    m_compute_shader_sampler = Sampler::create(move(sampler_create_info_ptr));
-    #pragma endregion
-
+    m_sampler = Sampler::create(move(sampler_create_info_ptr));
 }
 
 void Engine::init_dsgs()
@@ -580,10 +612,15 @@ void Engine::init_dsgs()
     #pragma region 创建描述符集群
     auto dsg_create_info_ptrs = vector<DescriptorSetCreateInfoUniquePtr>(7);
 
-    //0:所有模型纹理
+    //0:模型纹理及其材质
     dsg_create_info_ptrs[0] = DescriptorSetCreateInfo::create();
     dsg_create_info_ptrs[0]->add_binding(
         0, /* n_binding */
+        DescriptorType::UNIFORM_BUFFER,
+        1, /* n_elements */
+        ShaderStageFlagBits::COMPUTE_BIT);
+    dsg_create_info_ptrs[0]->add_binding(
+        1, /* n_binding */
         DescriptorType::COMBINED_IMAGE_SAMPLER,
         m_model->get_texture_num(), /* n_elements */
         ShaderStageFlagBits::COMPUTE_BIT);
@@ -638,14 +675,19 @@ void Engine::init_dsgs()
 
     #pragma region 为描述符集绑定具体资源
 
-    #pragma region 0:所有模型纹理
-    m_dsg_ptr->set_binding_array_items(
+    #pragma region 0:模型纹理及其材质索引信息
+    m_dsg_ptr->set_binding_item(
         0, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
         0, /* n_binding */
+        DescriptorSet::UniformBufferBindingElement(
+            m_texture_indices_uniform_buffer_ptr.get()));
+    m_dsg_ptr->set_binding_array_items(
+        0, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
+        1, /* n_binding */
         BindingElementArrayRange(
             0,                                  /* StartBindingElementIndex */
-            m_combined_image_samplers.size()),  /* NumberOfBindingElements  */
-        m_combined_image_samplers.data());
+            m_texture_combined_image_samplers_binding.size()),  /* NumberOfBindingElements  */
+        m_texture_combined_image_samplers_binding.data());
     #pragma endregion
 
     #pragma region 1:顶点着色器所需的的MVP
@@ -683,7 +725,7 @@ void Engine::init_dsgs()
         DescriptorSet::CombinedImageSamplerBindingElement(
             ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             m_depth_image_view_ptr.get(),
-            m_compute_shader_sampler.get()));
+            m_sampler.get()));
     
     m_dsg_ptr->set_binding_item(
         3, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
@@ -691,7 +733,7 @@ void Engine::init_dsgs()
         DescriptorSet::CombinedImageSamplerBindingElement(
             ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             m_tangent_frame_image_view_ptr.get(),
-            m_compute_shader_sampler.get()));
+            m_sampler.get()));
 
     m_dsg_ptr->set_binding_item(
         3, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
@@ -699,7 +741,7 @@ void Engine::init_dsgs()
         DescriptorSet::CombinedImageSamplerBindingElement(
             ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             m_uv_and_depth_gradient_image_view_ptr.get(),
-            m_compute_shader_sampler.get()));
+            m_sampler.get()));
 
     m_dsg_ptr->set_binding_item(
         3, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
@@ -707,7 +749,7 @@ void Engine::init_dsgs()
         DescriptorSet::CombinedImageSamplerBindingElement(
             ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             m_uv_gradient_image_view_ptr.get(),
-            m_compute_shader_sampler.get()));
+            m_sampler.get()));
 
     m_dsg_ptr->set_binding_item(
         3, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
@@ -715,7 +757,7 @@ void Engine::init_dsgs()
         DescriptorSet::CombinedImageSamplerBindingElement(
             ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             m_material_id_image_view_ptr.get(),
-            m_compute_shader_sampler.get()));
+            m_sampler.get()));
     #pragma endregion
 
     #pragma region 4:交换链图像
@@ -928,7 +970,7 @@ void Engine::init_gfx_pipelines()
     gfx_pipeline_create_info_ptr->attach_push_constant_range(
         0, /* in_offset */
         4, /* in_size */
-        Anvil::ShaderStageFlagBits::FRAGMENT_BIT);
+        ShaderStageFlagBits::FRAGMENT_BIT);
 
     gfx_pipeline_create_info_ptr->set_rasterization_properties(
         PolygonMode::FILL,
@@ -1449,7 +1491,7 @@ void Engine::recreate_swapchain()
 
     init_swapchain();
     init_image();
-    init_image_view_and_sampler();
+    init_image_view();
     init_dsgs();
     init_framebuffers();
     init_render_pass();
@@ -1605,7 +1647,7 @@ void Engine::update_data(uint32_t in_n_swapchain_image)
         m_device_ptr->get_universal_queue(0));
 
     SunLightUniform sun_light;
-    sun_light.SunDirectionWS = vec3(0.9f, 0.9f, -0.2f);
+    sun_light.SunDirectionWS = vec3(0.5f, 0.1f, 0.5f);
     sun_light.SunIrradiance = vec3(10.0f, 10.0f, 10.0f);
     m_sunLight_uniform_buffer_ptr->write(
         in_n_swapchain_image * m_sunLight_buffer_size_per_swapchain_image, /* start_offset */
@@ -1680,8 +1722,6 @@ void Engine::cleanup_swapwhain()
     auto gfx_pipeline_manager_ptr = m_device_ptr->get_graphics_pipeline_manager();
     Vulkan::vkDeviceWaitIdle(m_device_ptr->get_device_vk());
     
-    m_compute_shader_sampler.reset();
-
     m_depth_image_view_ptr.reset();
     m_tangent_frame_image_view_ptr.reset();
     m_uv_and_depth_gradient_image_view_ptr.reset();
@@ -1725,11 +1765,14 @@ void Engine::deinit()
 {
     cleanup_swapwhain();
 
+    m_sampler.reset();
+
     m_frame_signal_semaphores.clear();
     m_frame_wait_semaphores.clear();
 
     m_rendering_surface_ptr.reset();
     
+    m_texture_indices_uniform_buffer_ptr.reset();
     m_mvp_uniform_buffer_ptr.reset();
     m_sunLight_uniform_buffer_ptr.reset();
     m_camera_uniform_buffer_ptr.reset();

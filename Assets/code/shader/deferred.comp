@@ -4,6 +4,14 @@
 
 #define PI 3.1415926535897932384626433832795
 
+struct MaterialTextureIndices
+{
+	uint albedo;
+	uint normal;
+	uint roughness;
+	uint metallic;
+};
+
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(push_constant) uniform Constant
@@ -11,7 +19,11 @@ layout(push_constant) uniform Constant
 	vec2 RTSize;
 }constant;
 
-layout(set = 0, binding = 0) uniform sampler2D texSampler[];
+layout(set = 0, binding = 0) uniform Materials
+{
+	MaterialTextureIndices materialTextureIndices[25];
+}materials;
+layout(set = 0, binding = 1) uniform sampler2D texSampler[];
 
 layout(set = 1, binding = 0) uniform SunLight
 {
@@ -129,16 +141,15 @@ vec3 CalcLighting(vec3 normal, vec3 lightDir, vec3 peakIrradiance,
 					vec3 diffuseAlbedo, vec3 specularAlbedo, float roughness,
 					vec3 positionWS, vec3 cameraPosWS)
 {
-	vec3 lighting = diffuseAlbedo * (1.0f / 3.14159f);
+	vec3 lighting = diffuseAlbedo * (1.0f / PI);
+//	vec3 lighting = diffuseAlbedo;
 
 	vec3 view = normalize(cameraPosWS - positionWS);
 	const float nDotL = clamp(dot(normal, lightDir),0.0,1.0);
 ;
 	if(nDotL > 0.0f)
 	{
-		const float nDotV = clamp(dot(normal, view),0.0,1.0);
 		vec3 h = normalize(view + lightDir);
-
 		vec3 fresnel = Fresnel(specularAlbedo, h, lightDir);
 
 		float specular = GGX_Specular(roughness, normal, h, view, lightDir);
@@ -154,18 +165,21 @@ void main()
 	uint packedMaterialID = texelFetch(materialIDMap, pixelPos, 0).x;
 	uint materialID = packedMaterialID & 0x7F;
 
-	if(materialID == 255)
+	if(packedMaterialID == 255)
 	{
 		imageStore(outColor, pixelPos, vec4(0.2f, 0.2f, 0.3f, 0.5f));
 	}
 	else
 	{
-		vec4 tangentFrame = UnpackQuaternion(texelFetch(tangentFrameMap, pixelPos, 0));
-		mat3 tangentFrameMatrix = QuatTo3x3(tangentFrame);
-		float handedness = uint(packedMaterialID & 0x80) == 1 ? -1.0f : 1.0f;
-		tangentFrameMatrix[1] *= handedness;
+		MaterialTextureIndices indices = materials.materialTextureIndices[materialID];
 
-		vec3 normalWS = tangentFrameMatrix[2];
+		//vec4 tangentFrame = UnpackQuaternion(texelFetch(tangentFrameMap, pixelPos, 0));
+		//mat3 tangentFrameMatrix = QuatTo3x3(tangentFrame);
+		//float handedness = (packedMaterialID & 0x80) == 0 ? -1.0f : 1.0f;
+		//tangentFrameMatrix[1] *= handedness;
+
+		
+		
 
 		vec2 invRTSize = 1.0f / constant.RTSize;
 		vec2 screenUV = (pixelPos + 0.5f) * invRTSize;
@@ -179,11 +193,22 @@ void main()
 		vec4 uvGradients = texelFetch(UVGradientMap, pixelPos, 0);
 		vec2 uvDX = uvGradients.xy;
 		vec2 uvDY = uvGradients.zw;
-		vec3 diffuseAlbedo = textureGrad(texSampler[materialID], texCoord, uvDX, uvDY).xyz;
 
+//		vec3 normalTS;
+//		normalTS.xy = textureGrad(texSampler[indices.normal], texCoord, uvDX, uvDY).xy * 2.0f - 1.0f;
+//		normalTS.z = sqrt(1.0f - clamp(normalTS.x * normalTS.x + normalTS.y * normalTS.y, 0.0f, 1.0f));
+//		vec3 normalWS = clamp(tangentFrameMatrix * normalTS, 0.0f, 1.0f);
+		vec3 normalWS = texelFetch(tangentFrameMap, pixelPos, 0).xyz;
 		
+		float roughness = textureGrad(texSampler[indices.roughness], texCoord, uvDX, uvDY).x;
+		float metallic = textureGrad(texSampler[indices.metallic], texCoord, uvDX, uvDY).x;
+		vec3 albedo = textureGrad(texSampler[indices.albedo], texCoord, uvDX, uvDY).xyz;
+		vec3 diffuseAlbedo = mix(albedo.xyz, vec3(0.0f, 0.0f, 0.0f), metallic);
+		vec3 specularAlbedo = mix(vec3(0.03f, 0.03f, 0.03f), albedo.xyz, metallic);
+
+
 		vec3 color = CalcLighting(normalWS, sunLight.SunDirectionWS, sunLight.SunIrradiance, diffuseAlbedo, 
-			vec3(0.0f, 0.0f, 0.0f), 0.0f, positionWS, camera.CameraPosWS);
+			specularAlbedo, roughness * roughness, positionWS, camera.CameraPosWS);
 
 		imageStore(outColor, pixelPos, vec4(color, 1.0f));
 	}
