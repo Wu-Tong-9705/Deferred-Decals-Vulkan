@@ -38,9 +38,9 @@ void Mesh::load_mesh(const aiMesh* mesh, int i)
 		vertex.tangent.y = mesh->mTangents[i].y;
 		vertex.tangent.z = mesh->mTangents[i].z;
 
-		vertex.bitangent.x = mesh->mBitangents[i].x;
-		vertex.bitangent.y = mesh->mBitangents[i].y;
-		vertex.bitangent.z = mesh->mBitangents[i].z;
+		vertex.bitangent.x = -mesh->mBitangents[i].x;
+		vertex.bitangent.y = -mesh->mBitangents[i].y;
+		vertex.bitangent.z = -mesh->mBitangents[i].z;
 
 
 		vertices.push_back(vertex);

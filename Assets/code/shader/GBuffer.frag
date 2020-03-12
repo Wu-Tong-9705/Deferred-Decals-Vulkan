@@ -22,103 +22,90 @@ layout(location = 3) out uint outMaterialID;
 
 vec4 QuatFrom3x3(mat3 m)
 {
-	mat3 a = transpose(m);
+	//探测四元数中最大的项 
+	float fourWSquaredMinusl = m[0][0]+m[1][1]+m[2][2];
+	float fourXSquaredMinusl = m[0][0]-m[1][1]-m[2][2];
+	float fourYSquaredMinusl = m[1][1]-m[0][0]-m[2][2];
+	float fourZSquaredMinusl = m[2][2]-m[0][0]-m[1][1];
+
+	int biggestIndex = 0;
+	float fourBiggestSqureMinus1 = fourWSquaredMinusl;
+	if(fourXSquaredMinusl>fourBiggestSqureMinus1){
+		fourBiggestSqureMinus1 = fourXSquaredMinusl;
+		biggestIndex =1;
+	} 
+	if(fourYSquaredMinusl>fourBiggestSqureMinus1){
+		fourBiggestSqureMinus1 = fourYSquaredMinusl;
+		biggestIndex =2;
+	} 
+	if(fourZSquaredMinusl>fourBiggestSqureMinus1){
+		fourBiggestSqureMinus1 = fourZSquaredMinusl;
+		biggestIndex =3;
+	} 
+
+	//计算平方根和除法 
+	float biggestVal = sqrt(fourBiggestSqureMinus1+1.0f)*0.5f;
+	float mult = 0.25f/biggestVal;
+
+	//计算四元数的值
 	vec4 q;
-	float trace = a[0][0] + a[1][1] + a[2][2];
-	if(trace > 0)
-	{
-		float s = 0.5f / sqrt(trace + 1.0f);
-		q.w = 0.25f / s;
-		q.x = (a[2][1] - a[1][2]) * s;
-		q.y = (a[0][2] - a[2][0]) * s;
-		q.z = (a[1][0] - a[0][1]) * s;
-	}
-	else
-	{
-		if(a[0][0] > a[1][1] && a[0][0] > a[2][2])
-		{
-			float s = 2.0f * sqrt(1.0f + a[0][0] - a[1][1] - a[2][2]);
-			q.w = (a[2][1] - a[1][2]) / s;
-			q.x = 0.25f * s;
-			q.y = (a[0][1] + a[1][0]) / s;
-			q.z = (a[0][2] + a[2][0]) / s;
-		}
-		else if(a[1][1] > a[2][2])
-		{
-			float s = 2.0f * sqrt(1.0f + a[1][1] - a[0][0] - a[2][2]);
-			q.w = (a[0][2] - a[2][0]) / s;
-			q.x = (a[0][1] + a[1][0]) / s;
-			q.y = 0.25f * s;
-			q.z = (a[1][2] + a[2][1]) / s;
-		}
-		else
-		{
-			float s = 2.0f * sqrt(1.0f + a[2][2] - a[0][0] - a[1][1]);
-			q.w = (a[1][0] - a[0][1]) / s;
-			q.x = (a[0][2] + a[2][0]) / s;
-			q.y = (a[1][2] + a[2][1]) / s;
-			q.z = 0.25f * s;
-		}
+	switch(biggestIndex){
+		case 0:
+			q.w=biggestVal;
+			q.x=(m[1][2]-m[2][1])*mult;
+			q.y=(m[2][0]-m[0][2])*mult;
+			q.z=(m[0][1]-m[1][0])*mult;
+			break;
+		case 1:
+			q.x = biggestVal;
+			q.w =(m[1][2]-m[2][1])*mult;
+			q.y =(m[0][1]+m[1][0])*mult;
+			q.z =(m[2][0]+m[0][2])*mult;
+			break;
+		case 2:
+			q.y =biggestVal;
+			q.w =(m[2][0]-m[0][2])*mult;
+			q.x =(m[0][1]+m[1][0])*mult;
+			q.z =(m[1][2]+m[2][1])*mult;
+			break;
+		case 3:
+			q.z =biggestVal;
+			q.w =(m[0][1]-m[1][0])*mult;
+			q.x =(m[2][0]+m[0][2])*mult;
+			q.y =(m[1][2]+m[2][1])*mult;
+			break;
 	}
 	return q;
 }
 
 vec4 PackQuaternion(vec4 q)
 {
-	vec4 absQ = abs(q);
-	float absMaxComponent = max(max(absQ.x, absQ.y), max(absQ.z, absQ.w));
-
-	uint maxCompIdx = 0;
-	float maxComponent = q.x;
-
-	for(uint i = 0; i < 4; ++i)
-	{
-		if(absQ[i] == absMaxComponent)
-		{
-			maxCompIdx = i;
-			maxComponent = q[i];
-		}
-	}
-
-	if(maxComponent < 0.0f)
-		q *= -1.0f;
-
-	vec3 components;
-	if(maxCompIdx == 0)
-		components = q.yzw;
-	else if(maxCompIdx == 1)
-		components = q.xzw;
-	else if(maxCompIdx == 2)
-		components = q.xyw;
-	else
-		components = q.xyz;
-
-	const float maxRange = 1.0f / sqrt(2.0f);
-	components /= maxRange;
+	vec3 components = q.xyz;
 	components = components * 0.5f + 0.5f;
 
-	return vec4(components, maxCompIdx / 3.0f);
+	return vec4(components, 0.0f);
 }
 
 void main() 
 {
 	vec3 normalWS = normalize(inWorldNormal);
-	vec3 tangentWS = normalize(inWorldTangent);
 	vec3 bitangentWS = normalize(inWorldBitangent);
+	vec3 tangentWS = normalize(inWorldTangent);
 
 	float handedness = dot(bitangentWS, cross(normalWS, tangentWS)) > 0.0f ? 1.0f : -1.0f;
 	bitangentWS *= handedness;
-
-	//vec4 tangentFrame = QuatFrom3x3(mat3x3(tangentWS, bitangentWS, normalWS));
-	//outTangentFrame = PackQuaternion(tangentFrame);
-	outTangentFrame = vec4(normalWS,1.0f);
+	
+	vec4 tangentFrame = QuatFrom3x3(mat3(tangentWS, bitangentWS, normalWS));
+	outTangentFrame = PackQuaternion(tangentFrame);
 
 	outUVandDepthGradient.xy = fract(inTexCoord / 2.0000f);
 	outUVandDepthGradient.zw = vec2(dFdx(gl_FragCoord.z), dFdy(gl_FragCoord.z));
 	outUVandDepthGradient.zw = sign(outUVandDepthGradient.zw) * pow(abs(outUVandDepthGradient.zw), vec2(1/2.0f, 1/2.0f));
-	outMaterialID = tex.ID & 0x7F;
+	outMaterialID = tex.ID & 0x3F;
 	if(handedness == -1.0f)
 		outMaterialID |= 0x80;
+	if(tangentFrame.w < 0.0f)
+		outMaterialID |= 0x40;
 
 	outUVGradient = vec4(dFdx(inTexCoord), dFdy(inTexCoord));
 }

@@ -19,9 +19,11 @@ layout(push_constant) uniform Constant
 	vec2 RTSize;
 }constant;
 
+layout( constant_id = 0 ) const int SIZE = 10;
+
 layout(set = 0, binding = 0) uniform Materials
 {
-	MaterialTextureIndices materialTextureIndices[25];
+	MaterialTextureIndices materialTextureIndices[SIZE];
 }materials;
 layout(set = 0, binding = 1) uniform sampler2D texSampler[];
 
@@ -46,36 +48,35 @@ layout(set = 2, binding = 4) uniform usampler2D materialIDMap;
 layout(set = 3, binding = 0) uniform writeonly image2D outColor;
 
 
-vec4 UnpackQuaternion(vec4 packedQuaternion)
+vec4 UnpackQuaternion(vec4 q)
 {
-	uint maxCompIdx = uint(packedQuaternion.w * 3.0f);
-	packedQuaternion.xyz = packedQuaternion.xyz * 2.0f - 1.0f;
-	const float maxRange = 1.0f / sqrt(2.0f);
-	packedQuaternion.xyz *= maxRange;
-	float maxComponent = sqrt(1.0f - clamp(
-		packedQuaternion.x * packedQuaternion.x
-		+ packedQuaternion.y * packedQuaternion.y
-		+ packedQuaternion.z * packedQuaternion.z, 0.0f, 1.0f));
-
-	vec4 q;
-	if(maxCompIdx == 0)
-		q = vec4(maxComponent, packedQuaternion.xyz);
-	else if(maxCompIdx == 1)
-		q = vec4(packedQuaternion.x, maxComponent, packedQuaternion.yz);
-	else if(maxCompIdx == 2)
-		q = vec4(packedQuaternion.xy, maxComponent, packedQuaternion.z);
-	else
-		q = vec4(packedQuaternion.xyz, maxComponent);
+	q.xyz = q.xyz * 2.0f - 1.0f;
+	q.w = sqrt(1.0f - clamp(
+		q.x * q.x + q.y * q.y + q.z * q.z,
+		0.0f,
+		1.0f));
 
 	return q;
 }
 
 mat3 QuatTo3x3(vec4 q)
 {
-	mat3 m = mat3(1.0f - 2.0f * q.y * q.y - 2.0f * q.z * q.z, 2.0f * q.x * q.y - 2.0f * q.z * q.w, 2.0f * q.x * q.z + 2.0f * q.y * q.w,
-						  2.0f * q.x * q.y + 2.0f * q.z * q.w, 1.0f - 2.0f * q.x * q.x - 2.0f * q.z * q.z, 2.0f * q.y * q.z - 2.0f * q.x * q.w,
-						  2.0f * q.x * q.z - 2.0f * q.y * q.w, 2.0f * q.y * q.z + 2.0f * q.x * q.w, 1.0f - 2.0f * q.x * q.x - 2.0f * q.y * q.y);
-	return transpose(m);
+	vec3 x = vec3(
+		1.0f - 2.0f * q.y * q.y - 2.0f * q.z * q.z,
+		2.0f * q.x * q.y + 2.0f * q.z * q.w,
+		2.0f * q.x * q.z - 2.0f * q.y * q.w);
+
+	vec3 y = vec3(
+		2.0f * q.x * q.y - 2.0f * q.z * q.w,
+		1.0f - 2.0f * q.x * q.x - 2.0f * q.z * q.z,
+		2.0f * q.y * q.z + 2.0f * q.x * q.w);
+
+	vec3 z = vec3(
+		2.0f * q.x * q.z + 2.0f * q.y * q.w,
+		2.0f * q.y * q.z - 2.0f * q.x * q.w,
+		1.0f - 2.0f * q.x * q.x - 2.0f * q.y * q.y);
+
+	return mat3(x,y,z);
 }
 
 
@@ -142,7 +143,6 @@ vec3 CalcLighting(vec3 normal, vec3 lightDir, vec3 peakIrradiance,
 					vec3 positionWS, vec3 cameraPosWS)
 {
 	vec3 lighting = diffuseAlbedo * (1.0f / PI);
-//	vec3 lighting = diffuseAlbedo;
 
 	vec3 view = normalize(cameraPosWS - positionWS);
 	const float nDotL = clamp(dot(normal, lightDir),0.0,1.0);
@@ -163,7 +163,7 @@ void main()
 {
 	const ivec2 pixelPos = ivec2(gl_GlobalInvocationID.xy);
 	uint packedMaterialID = texelFetch(materialIDMap, pixelPos, 0).x;
-	uint materialID = packedMaterialID & 0x7F;
+	uint materialID = packedMaterialID & 0x3F;
 
 	if(packedMaterialID == 255)
 	{
@@ -173,13 +173,13 @@ void main()
 	{
 		MaterialTextureIndices indices = materials.materialTextureIndices[materialID];
 
-		//vec4 tangentFrame = UnpackQuaternion(texelFetch(tangentFrameMap, pixelPos, 0));
-		//mat3 tangentFrameMatrix = QuatTo3x3(tangentFrame);
-		//float handedness = (packedMaterialID & 0x80) == 0 ? -1.0f : 1.0f;
-		//tangentFrameMatrix[1] *= handedness;
+		vec4 tangentFrame = UnpackQuaternion(texelFetch(tangentFrameMap, pixelPos, 0));
+		float wsign = (packedMaterialID & 0x40) == 0 ? 1.0f : -1.0f;
+		tangentFrame.w *= wsign;
 
-		
-		
+		mat3 tangentFrameMatrix = QuatTo3x3(tangentFrame);
+		float handedness = (packedMaterialID & 0x80) == 0 ? 1.0f : -1.0f;
+		tangentFrameMatrix[1] *= handedness;
 
 		vec2 invRTSize = 1.0f / constant.RTSize;
 		vec2 screenUV = (pixelPos + 0.5f) * invRTSize;
@@ -194,11 +194,10 @@ void main()
 		vec2 uvDX = uvGradients.xy;
 		vec2 uvDY = uvGradients.zw;
 
-//		vec3 normalTS;
-//		normalTS.xy = textureGrad(texSampler[indices.normal], texCoord, uvDX, uvDY).xy * 2.0f - 1.0f;
-//		normalTS.z = sqrt(1.0f - clamp(normalTS.x * normalTS.x + normalTS.y * normalTS.y, 0.0f, 1.0f));
-//		vec3 normalWS = clamp(tangentFrameMatrix * normalTS, 0.0f, 1.0f);
-		vec3 normalWS = texelFetch(tangentFrameMap, pixelPos, 0).xyz;
+		vec3 normalTS;
+		normalTS.xy = textureGrad(texSampler[indices.normal], texCoord, uvDX, uvDY).xy * 2.0f - 1.0f;
+		normalTS.z = sqrt(1.0f - clamp(normalTS.x * normalTS.x + normalTS.y * normalTS.y, 0.0f, 1.0f));
+		vec3 normalWS = clamp(tangentFrameMatrix * normalTS, 0.0f, 1.0f);
 		
 		float roughness = textureGrad(texSampler[indices.roughness], texCoord, uvDX, uvDY).x;
 		float metallic = textureGrad(texSampler[indices.metallic], texCoord, uvDX, uvDY).x;
@@ -210,7 +209,8 @@ void main()
 		vec3 color = CalcLighting(normalWS, sunLight.SunDirectionWS, sunLight.SunIrradiance, diffuseAlbedo, 
 			specularAlbedo, roughness * roughness, positionWS, camera.CameraPosWS);
 
-		imageStore(outColor, pixelPos, vec4(color, 1.0f));
+//		imageStore(outColor, pixelPos, texelFetch(tangentFrameMap, pixelPos, 0));
+		imageStore(outColor, pixelPos, vec4(color, 0));
 	}
 	
 

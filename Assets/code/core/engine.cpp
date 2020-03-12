@@ -646,7 +646,7 @@ void Engine::init_dsgs()
         1, /* n_elements */
         ShaderStageFlagBits::COMPUTE_BIT);
 
-    //3:GBuffer
+    //3:用于计算着色器读取的GBuffer
     dsg_create_info_ptrs[3] = DescriptorSetCreateInfo::create();
     for (int i = 0; i < 5; i++)
     {
@@ -718,7 +718,7 @@ void Engine::init_dsgs()
             m_camera_buffer_size_per_swapchain_image));
     #pragma endregion
 
-    #pragma region 3:GBuffer
+    #pragma region 3:用于计算着色器读取的GBuffer
     m_dsg_ptr->set_binding_item(
         3, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
         0, /* n_binding */
@@ -783,7 +783,6 @@ void Engine::init_render_pass()
     
     #pragma region 添加附件描述
     RenderPassAttachmentID 
-        render_pass_color_attachment_id, 
         tangent_frame_color_attachment_id, 
         uv_and_depth_gradient_color_attachment_id, 
         uv_gradient_color_attachment_id, 
@@ -1027,6 +1026,9 @@ void Engine::init_compute_pipelines()
         0,
         sizeof(m_deferred_constants),
         ShaderStageFlagBits::COMPUTE_BIT);
+
+    int SIZE = m_model->get_material_num();
+    compute_pipeline_create_info_ptr->add_specialization_constant(0, 4, &SIZE);
 
     auto compute_pipeline_manager_ptr(m_device_ptr->get_compute_pipeline_manager());
     compute_pipeline_manager_ptr->add_pipeline(
