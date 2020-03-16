@@ -340,7 +340,7 @@ void Engine::init_image()
         m_depth_format = SelectSupportedFormat(
             { Format::D32_SFLOAT,  Format::D32_SFLOAT_S8_UINT,  Format::D24_UNORM_S8_UINT },
             ImageTiling::OPTIMAL,
-            FormatFeatureFlagBits::DEPTH_STENCIL_ATTACHMENT_BIT);
+            FormatFeatureFlagBits::DEPTH_STENCIL_ATTACHMENT_BIT | FormatFeatureFlagBits::SAMPLED_IMAGE_BIT);
 
         auto image_create_info_ptr = ImageCreateInfo::create_no_alloc(
             m_device_ptr.get(),
@@ -365,6 +365,35 @@ void Engine::init_image()
 
         allocator_ptr->add_image_whole(
             m_depth_image_ptr.get(),
+            MemoryFeatureFlagBits::DEVICE_LOCAL_BIT);
+    }
+    #pragma endregion
+
+    #pragma region 创建深度图像2(权宜之计)
+    {
+        auto image_create_info_ptr = ImageCreateInfo::create_no_alloc(
+            m_device_ptr.get(),
+            ImageType::_2D,
+            Format::R16_SNORM,
+            ImageTiling::OPTIMAL,
+            ImageUsageFlagBits::COLOR_ATTACHMENT_BIT
+            | ImageUsageFlagBits::SAMPLED_BIT,
+            m_width,
+            m_height,
+            1,
+            1,
+            SampleCountFlagBits::_1_BIT,
+            QueueFamilyFlagBits::COMPUTE_BIT | QueueFamilyFlagBits::GRAPHICS_BIT,
+            SharingMode::EXCLUSIVE,
+            false,
+            ImageCreateFlagBits::NONE,
+            ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+
+        m_depth_image2_ptr = Image::create(move(image_create_info_ptr));
+        m_depth_image2_ptr->set_name("Depth image2");
+
+        allocator_ptr->add_image_whole(
+            m_depth_image2_ptr.get(),
             MemoryFeatureFlagBits::DEVICE_LOCAL_BIT);
     }
     #pragma endregion
@@ -504,6 +533,25 @@ void Engine::init_image_view()
             ComponentSwizzle::A);
 
         m_depth_image_view_ptr = ImageView::create(move(image_view_create_info_ptr));
+    }
+    #pragma endregion
+
+    #pragma region 创建深度图像视图2(权宜之计)
+    {
+        auto image_view_create_info_ptr = ImageViewCreateInfo::create_2D(
+            m_device_ptr.get(),
+            m_depth_image2_ptr.get(),
+            0,
+            0,
+            1,
+            ImageAspectFlagBits::COLOR_BIT,
+            Format::R16_SNORM,
+            ComponentSwizzle::R,
+            ComponentSwizzle::G,
+            ComponentSwizzle::B,
+            ComponentSwizzle::A);
+
+        m_depth_image_view2_ptr = ImageView::create(move(image_view_create_info_ptr));
     }
     #pragma endregion
 
@@ -724,7 +772,7 @@ void Engine::init_dsgs()
         0, /* n_binding */
         DescriptorSet::CombinedImageSamplerBindingElement(
             ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-            m_depth_image_view_ptr.get(),
+            m_depth_image_view2_ptr.get(),
             m_sampler.get()));
     
     m_dsg_ptr->set_binding_item(
@@ -783,12 +831,23 @@ void Engine::init_render_pass()
     
     #pragma region 添加附件描述
     RenderPassAttachmentID 
+        depth_color_attachment_id, 
         tangent_frame_color_attachment_id, 
         uv_and_depth_gradient_color_attachment_id, 
         uv_gradient_color_attachment_id, 
         material_id_color_attachment_id, 
         render_pass_depth_attachment_id;
     
+    render_pass_create_info_ptr->add_color_attachment(
+        Format::R16_SNORM,
+        SampleCountFlagBits::_1_BIT,
+        AttachmentLoadOp::CLEAR,
+        AttachmentStoreOp::STORE,
+        ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        false, /* may_alias */
+        &depth_color_attachment_id);
+
     render_pass_create_info_ptr->add_color_attachment(
         Format::A2B10G10R10_UNORM_PACK32,
         SampleCountFlagBits::_1_BIT,
@@ -849,29 +908,36 @@ void Engine::init_render_pass()
         render_pass_create_info_ptr->add_subpass_color_attachment(
             m_render_pass_subpass_GBuffer_id,
             ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-            tangent_frame_color_attachment_id,
+            depth_color_attachment_id,
             0,        /* location                      */
             nullptr); /* opt_attachment_resolve_id_ptr */
 
         render_pass_create_info_ptr->add_subpass_color_attachment(
             m_render_pass_subpass_GBuffer_id,
             ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-            uv_and_depth_gradient_color_attachment_id,
+            tangent_frame_color_attachment_id,
             1,        /* location                      */
             nullptr); /* opt_attachment_resolve_id_ptr */
 
         render_pass_create_info_ptr->add_subpass_color_attachment(
             m_render_pass_subpass_GBuffer_id,
             ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-            uv_gradient_color_attachment_id,
+            uv_and_depth_gradient_color_attachment_id,
             2,        /* location                      */
             nullptr); /* opt_attachment_resolve_id_ptr */
 
         render_pass_create_info_ptr->add_subpass_color_attachment(
             m_render_pass_subpass_GBuffer_id,
             ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-            material_id_color_attachment_id,
+            uv_gradient_color_attachment_id,
             3,        /* location                      */
+            nullptr); /* opt_attachment_resolve_id_ptr */
+
+        render_pass_create_info_ptr->add_subpass_color_attachment(
+            m_render_pass_subpass_GBuffer_id,
+            ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            material_id_color_attachment_id,
+            4,        /* location                      */
             nullptr); /* opt_attachment_resolve_id_ptr */
    
         render_pass_create_info_ptr->add_subpass_depth_stencil_attachment(
@@ -1050,6 +1116,11 @@ void Engine::init_framebuffers()
         1 /* n_layers */);
             
     result = create_info_ptr->add_attachment(
+        m_depth_image_view2_ptr.get(),
+        nullptr /* out_opt_attachment_id_ptr */);
+    anvil_assert(result);
+    
+    result = create_info_ptr->add_attachment(
         m_tangent_frame_image_view_ptr.get(),
         nullptr /* out_opt_attachment_id_ptr */);
     anvil_assert(result);
@@ -1091,12 +1162,6 @@ void Engine::init_command_buffers()
     image_subresource_range.layer_count = 1;
     image_subresource_range.level_count = 1;
 
-    image_subresource_range2.aspect_mask = ImageAspectFlagBits::DEPTH_BIT;
-    image_subresource_range2.base_array_layer = 0;
-    image_subresource_range2.base_mip_level = 0;
-    image_subresource_range2.layer_count = 1;
-    image_subresource_range2.level_count = 1;
-
     for (uint32_t n_command_buffer = 0; n_command_buffer < N_SWAPCHAIN_IMAGES; ++n_command_buffer)
     {
         #pragma region 开始记录指令
@@ -1111,7 +1176,7 @@ void Engine::init_command_buffers()
                                         true); /* simultaneous_use_allowed */
         #pragma endregion
 
-        #pragma region 确保uniform缓冲已经写入
+        #pragma region 确保mvp_uniform缓冲已经写入
         BufferBarrier buffer_barrier(
             AccessFlagBits::HOST_WRITE_BIT,                 /* in_source_access_mask      */
             AccessFlagBits::UNIFORM_READ_BIT,               /* in_destination_access_mask */
@@ -1133,32 +1198,18 @@ void Engine::init_command_buffers()
             nullptr);        /* in_image_memory_barriers_ptr   */
         #pragma endregion
 
-        #pragma region 改变深度图像布局用于深度测试
-        ImageBarrier depth_test_image_barrier(
-            AccessFlagBits::SHADER_READ_BIT,                   /* source_access_mask       */
-            AccessFlagBits::DEPTH_STENCIL_ATTACHMENT_READ_BIT |
-                AccessFlagBits::DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,  /* destination_access_mask  */
-            ImageLayout::SHADER_READ_ONLY_OPTIMAL,              /* old_image_layout */
-            ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,      /* new_image_layout */
-            universal_queue_ptr->get_queue_family_index(),
-            universal_queue_ptr->get_queue_family_index(),
-            m_depth_image_ptr.get(),
-            image_subresource_range2);
-
-        cmd_buffer_ptr->record_pipeline_barrier(
-            PipelineStageFlagBits::COMPUTE_SHADER_BIT,                  /* src_stage_mask                 */
-            PipelineStageFlagBits::EARLY_FRAGMENT_TESTS_BIT,            /* dst_stage_mask                 */
-            DependencyFlagBits::NONE,
-            0,                                                        /* in_memory_barrier_count        */
-            nullptr,                                                  /* in_memory_barrier_ptrs         */
-            0,                                                        /* in_buffer_memory_barrier_count */
-            nullptr,                                                  /* in_buffer_memory_barrier_ptrs  */
-            1,                                                        /* in_image_memory_barrier_count  */
-            &depth_test_image_barrier);
-        #pragma endregion
-
         #pragma region 改变附件图像布局用于片元着色器输出
         vector<ImageBarrier> image_barriers;
+        image_barriers.push_back(
+            ImageBarrier(
+                AccessFlagBits::SHADER_READ_BIT,                    /* source_access_mask       */
+                AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT,         /* destination_access_mask  */
+                ImageLayout::SHADER_READ_ONLY_OPTIMAL,              /* old_image_layout */
+                ImageLayout::COLOR_ATTACHMENT_OPTIMAL,              /* new_image_layout */
+                universal_queue_ptr->get_queue_family_index(),
+                universal_queue_ptr->get_queue_family_index(),
+                m_depth_image2_ptr.get(),
+                image_subresource_range));
 
         image_barriers.push_back(
             ImageBarrier(
@@ -1217,15 +1268,16 @@ void Engine::init_command_buffers()
         #pragma endregion
 
         #pragma region 渲染GBuffer
-        array<VkClearValue, 5>            attachment_clear_value;
+        array<VkClearValue, 6>            attachment_clear_value;
         VkRect2D                          render_area;
         VkShaderStageFlags                shaderStageFlags = 0;
 
-        attachment_clear_value[0].color = { 0.0f, 0.0f, 0.0f, 0.0f };
+        attachment_clear_value[0].color = { 1.0f, 0.0f, 0.0f, 0.0f };
         attachment_clear_value[1].color = { 0.0f, 0.0f, 0.0f, 0.0f };
         attachment_clear_value[2].color = { 0.0f, 0.0f, 0.0f, 0.0f };
-        attachment_clear_value[3].color = { uint32(255), uint32(0), uint32(0), uint32(0) };
-        attachment_clear_value[4].depthStencil = { 1.0f, 0 };
+        attachment_clear_value[3].color = { 0.0f, 0.0f, 0.0f, 0.0f };
+        attachment_clear_value[4].color = { uint32(255), uint32(0), uint32(0), uint32(0) };
+        attachment_clear_value[5].depthStencil = { 1.0f, 0 };
 
         render_area.extent.height = m_height;
         render_area.extent.width = m_width;
@@ -1233,7 +1285,7 @@ void Engine::init_command_buffers()
         render_area.offset.y = 0;
 
         cmd_buffer_ptr->record_begin_render_pass(
-            5, /* in_n_clear_values */
+            6, /* in_n_clear_values */
             attachment_clear_value.data(),
             m_fbo.get(),
             render_area,
@@ -1262,6 +1314,16 @@ void Engine::init_command_buffers()
 
         #pragma region 改变附件图像布局用于计算着色器读取
         vector<ImageBarrier> image_barriers2;
+        image_barriers2.push_back(
+            ImageBarrier(
+                AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT, /* source_access_mask       */
+                AccessFlagBits::SHADER_READ_BIT,           /* destination_access_mask  */
+                ImageLayout::COLOR_ATTACHMENT_OPTIMAL,      /* old_image_layout */
+                ImageLayout::SHADER_READ_ONLY_OPTIMAL,      /* new_image_layout */
+                universal_queue_ptr->get_queue_family_index(),
+                universal_queue_ptr->get_queue_family_index(),
+                m_depth_image2_ptr.get(),
+                image_subresource_range));
 
         image_barriers2.push_back(
             ImageBarrier(
@@ -1318,29 +1380,37 @@ void Engine::init_command_buffers()
             image_barriers2.size(),                                  /* in_image_memory_barrier_count  */
             image_barriers2.data());
         #pragma endregion
+        
+        #pragma region 确保sunlight_uniform和camera_uniform缓冲已经写入
+        BufferBarrier buffer_barrier1(
+            AccessFlagBits::HOST_WRITE_BIT,                 /* in_source_access_mask      */
+            AccessFlagBits::UNIFORM_READ_BIT,               /* in_destination_access_mask */
+            universal_queue_ptr->get_queue_family_index(),         /* in_src_queue_family_index  */
+            universal_queue_ptr->get_queue_family_index(),         /* in_dst_queue_family_index  */
+            m_sunLight_uniform_buffer_ptr.get(),
+            m_sunLight_buffer_size_per_swapchain_image * n_command_buffer, /* in_offset                  */
+            m_sunLight_buffer_size_per_swapchain_image);
 
-        #pragma region 改变深度图像布局用于计算着色器读取
-        ImageBarrier depth_read_image_barrier(
-            AccessFlagBits::DEPTH_STENCIL_ATTACHMENT_READ_BIT |
-                AccessFlagBits::DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,  /* source_access_mask       */
-            AccessFlagBits::SHADER_READ_BIT,                         /* destination_access_mask  */  
-            ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,                   /* old_image_layout */
-            ImageLayout::SHADER_READ_ONLY_OPTIMAL,           /* new_image_layout */
-            universal_queue_ptr->get_queue_family_index(),
-            universal_queue_ptr->get_queue_family_index(),
-            m_depth_image_ptr.get(),
-            image_subresource_range2);
-
+        BufferBarrier buffer_barrier2(
+            AccessFlagBits::HOST_WRITE_BIT,                 /* in_source_access_mask      */
+            AccessFlagBits::UNIFORM_READ_BIT,               /* in_destination_access_mask */
+            universal_queue_ptr->get_queue_family_index(),         /* in_src_queue_family_index  */
+            universal_queue_ptr->get_queue_family_index(),         /* in_dst_queue_family_index  */
+            m_sunLight_uniform_buffer_ptr.get(),
+            m_sunLight_buffer_size_per_swapchain_image* n_command_buffer, /* in_offset                  */
+            m_sunLight_buffer_size_per_swapchain_image);
+        
+        BufferBarrier buffer_barriers[2] = { buffer_barrier1 , buffer_barrier2 };
         cmd_buffer_ptr->record_pipeline_barrier(
-            PipelineStageFlagBits::LATE_FRAGMENT_TESTS_BIT,           /* src_stage_mask                 */
-            PipelineStageFlagBits::COMPUTE_SHADER_BIT,                /* dst_stage_mask                 */
+            PipelineStageFlagBits::HOST_BIT,
+            PipelineStageFlagBits::COMPUTE_SHADER_BIT,
             DependencyFlagBits::NONE,
-            0,                                                        /* in_memory_barrier_count        */
-            nullptr,                                                  /* in_memory_barrier_ptrs         */
-            0,                                                        /* in_buffer_memory_barrier_count */
-            nullptr,                                                  /* in_buffer_memory_barrier_ptrs  */
-            1,                                                        /* in_image_memory_barrier_count  */
-            &depth_read_image_barrier);
+            0,               /* in_memory_barrier_count        */
+            nullptr,         /* in_memory_barriers_ptr         */
+            2,               /* in_buffer_memory_barrier_count */
+            buffer_barriers,
+            0,               /* in_image_memory_barrier_count  */
+            nullptr);        /* in_image_memory_barriers_ptr   */
         #pragma endregion
 
         #pragma region 改变交换链图像布局用于计算着色器写入
@@ -1725,12 +1795,14 @@ void Engine::cleanup_swapwhain()
     Vulkan::vkDeviceWaitIdle(m_device_ptr->get_device_vk());
     
     m_depth_image_view_ptr.reset();
+    m_depth_image_view2_ptr.reset();
     m_tangent_frame_image_view_ptr.reset();
     m_uv_and_depth_gradient_image_view_ptr.reset();
     m_uv_gradient_image_view_ptr.reset();
     m_material_id_image_view_ptr.reset();
 
     m_depth_image_ptr.reset();
+    m_depth_image2_ptr.reset();
     m_tangent_frame_image_ptr.reset();
     m_uv_and_depth_gradient_image_ptr.reset();
     m_uv_gradient_image_ptr.reset();
@@ -1791,7 +1863,7 @@ void Engine::deinit()
 #pragma endregion
 
 #pragma region 工具
-void Engine::on_validation_callback(Anvil::DebugMessageSeverityFlags in_severity, const char* in_message_ptr)
+void Engine::on_validation_callback(DebugMessageSeverityFlags in_severity, const char* in_message_ptr)
 {
     if ((in_severity & Anvil::DebugMessageSeverityFlagBits::ERROR_BIT) != 0)
     {
@@ -1801,20 +1873,20 @@ void Engine::on_validation_callback(Anvil::DebugMessageSeverityFlags in_severity
     }
 }
 
-Anvil::Format Engine::SelectSupportedFormat(
-    const vector<Anvil::Format>& candidates,
-    Anvil::ImageTiling tiling,
-    Anvil::FormatFeatureFlags features)
+Format Engine::SelectSupportedFormat(
+    const vector<Format>& candidates,
+    ImageTiling tiling,
+    FormatFeatureFlags features)
 {
-    Anvil::SGPUDevice* device_ptr(reinterpret_cast<Anvil::SGPUDevice*>(m_device_ptr.get()));
-    for (Anvil::Format format : candidates)
+    SGPUDevice* device_ptr(reinterpret_cast<SGPUDevice*>(m_device_ptr.get()));
+    for (Format format : candidates)
     {
-        Anvil::FormatProperties props = device_ptr->get_physical_device_format_properties(format);
-        if (tiling == Anvil::ImageTiling::LINEAR && (props.linear_tiling_capabilities & features) == features)
+        FormatProperties props = device_ptr->get_physical_device_format_properties(format);
+        if (tiling == ImageTiling::LINEAR && (props.linear_tiling_capabilities & features) == features)
         {
             return format;
         }
-        else if (tiling == Anvil::ImageTiling::OPTIMAL && (props.optimal_tiling_capabilities & features) == features)
+        else if (tiling == ImageTiling::OPTIMAL && (props.optimal_tiling_capabilities & features) == features)
         {
             return format;
         }

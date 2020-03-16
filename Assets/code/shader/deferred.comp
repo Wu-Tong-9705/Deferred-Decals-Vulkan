@@ -88,7 +88,7 @@ vec3 Fresnel(vec3 specAlbedo, vec3 h, vec3 l)
 	vec3 fresnel = specAlbedo + (1.0f - specAlbedo) * pow((1.0f - clamp(dot(l, h), 0.0, 1.0)), 5.0f);
 
 	// Fade out spec entirely when lower than 0.1% albedo
-	fresnel *= clamp(specAlbedo * 333.0f, 0.0, 1.0);
+	fresnel *= clamp(dot(specAlbedo, vec3(333.0f)), 0.0, 1.0);
 
 	return fresnel;
 }
@@ -121,16 +121,10 @@ float GGX_Specular(float m, vec3 n, in vec3 h, in vec3 v, vec3 l)
 	float nDotL = clamp(dot(n, l), 0.0, 1.0);
 	float nDotV = clamp(dot(n, v), 0.0, 1.0);
 
-	float nDotH2 = nDotH * nDotH;
-	float m2 = m * m;
 
 	// Calculate the distribution term
+	float m2 = m * m;
 	float d = m2 / (PI * pow(nDotH * nDotH * (m2 - 1) + 1, 2.0f));
-
-	// Calculate the matching visibility term
-	float v1i = GGX_V1(m2, nDotL);
-	float v1o = GGX_V1(m2, nDotV);
-	float vis = v1i * v1o;
 
 	return d * GGXVisibility(m2, nDotL, nDotV);
 }
@@ -146,11 +140,12 @@ vec3 CalcLighting(vec3 normal, vec3 lightDir, vec3 peakIrradiance,
 
 	vec3 view = normalize(cameraPosWS - positionWS);
 	const float nDotL = clamp(dot(normal, lightDir),0.0,1.0);
-;
+
+	vec3 fresnel = vec3(1.0f,0.0f,0.0f);
 	if(nDotL > 0.0f)
 	{
 		vec3 h = normalize(view + lightDir);
-		vec3 fresnel = Fresnel(specularAlbedo, h, lightDir);
+		fresnel = Fresnel(specularAlbedo, h, lightDir);
 
 		float specular = GGX_Specular(roughness, normal, h, view, lightDir);
 		lighting += specular * fresnel;
@@ -209,8 +204,8 @@ void main()
 		vec3 color = CalcLighting(normalWS, sunLight.SunDirectionWS, sunLight.SunIrradiance, diffuseAlbedo, 
 			specularAlbedo, roughness * roughness, positionWS, camera.CameraPosWS);
 
-//		imageStore(outColor, pixelPos, texelFetch(tangentFrameMap, pixelPos, 0));
-		imageStore(outColor, pixelPos, vec4(color, 0));
+		imageStore(outColor, pixelPos,vec4(color,1.0f));	
+
 	}
 	
 

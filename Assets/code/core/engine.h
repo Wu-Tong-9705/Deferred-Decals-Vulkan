@@ -126,6 +126,8 @@ private:
     vector<DescriptorSet::StorageImageBindingElement>   m_color_image_ptr;
     ImageUniquePtr                               m_depth_image_ptr;
     ImageViewUniquePtr                           m_depth_image_view_ptr;
+    ImageUniquePtr                               m_depth_image2_ptr;
+    ImageViewUniquePtr                           m_depth_image_view2_ptr;
     ImageUniquePtr                               m_tangent_frame_image_ptr;
     ImageViewUniquePtr                           m_tangent_frame_image_view_ptr;
     ImageUniquePtr                               m_uv_and_depth_gradient_image_ptr;

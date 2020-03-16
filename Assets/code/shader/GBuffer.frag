@@ -14,10 +14,11 @@ layout(location = 3) in vec3 inWorldBitangent;
 layout(location = 4) in vec2 inTexCoord;
 
 
-layout(location = 0) out vec4 outTangentFrame;
-layout(location = 1) out vec4 outUVandDepthGradient;
-layout(location = 2) out vec4 outUVGradient;
-layout(location = 3) out uint outMaterialID;
+layout(location = 0) out vec4 outDepth;
+layout(location = 1) out vec4 outTangentFrame;
+layout(location = 2) out vec4 outUVandDepthGradient;
+layout(location = 3) out vec4 outUVGradient;
+layout(location = 4) out uint outMaterialID;
 
 
 vec4 QuatFrom3x3(mat3 m)
@@ -88,6 +89,8 @@ vec4 PackQuaternion(vec4 q)
 
 void main() 
 {
+	outDepth.x = gl_FragCoord.z;
+
 	vec3 normalWS = normalize(inWorldNormal);
 	vec3 bitangentWS = normalize(inWorldBitangent);
 	vec3 tangentWS = normalize(inWorldTangent);
@@ -106,6 +109,6 @@ void main()
 		outMaterialID |= 0x80;
 	if(tangentFrame.w < 0.0f)
 		outMaterialID |= 0x40;
-
+		
 	outUVGradient = vec4(dFdx(inTexCoord), dFdy(inTexCoord));
 }
