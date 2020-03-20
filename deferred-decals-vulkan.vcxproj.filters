@@ -71,6 +71,9 @@
     <ClCompile Include="Assets\code\support\keys.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="Assets\code\support\bufferHelper.h">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="Anvil\build\Anvil.sln" />

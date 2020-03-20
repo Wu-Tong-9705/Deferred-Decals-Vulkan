@@ -168,6 +168,10 @@
     <ClCompile Include="Assets\code\scene\model.cpp" />
     <ClCompile Include="Assets\code\scene\material.cpp" />
     <ClCompile Include="Assets\code\support\keys.cpp" />
+    <ClCompile Include="Assets\code\support\bufferHelper.h">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="Anvil\build\Anvil.sln" />

@@ -3,18 +3,18 @@
 #include "../scene/camera.h"
 #include "../support/keys.h"
 #include "../scene/model.h"
-#define N_SWAPCHAIN_IMAGES (3)
+#include "support/bufferHelper.h"
+
+struct DeferredConstants
+{
+    vec2 RTSize;
+};
 
 struct MVPUniform
 {
     alignas(16) mat4 model;
     alignas(16) mat4 view;
     alignas(16) mat4 proj;
-};
-
-struct DeferredConstants
-{
-    vec2 RTSize;
 };
 
 struct SunLightUniform
@@ -73,8 +73,8 @@ private:
     void init_swapchain     ();
 
     void init_buffers       ();
+    void create_image_source(ImageUniquePtr& image, ImageViewUniquePtr&image_view, string name, Format format, bool isDepthImage = false);
     void init_image         ();
-    void init_image_view    ();
     void init_sampler       ();
     void init_dsgs          ();
 
@@ -164,12 +164,11 @@ private:
     RECT m_rect_before_full_screen;
 
     DeferredConstants         m_deferred_constants;
-    BufferUniquePtr           m_mvp_uniform_buffer_ptr;
-    VkDeviceSize              m_mvp_buffer_size_per_swapchain_image;
-    BufferUniquePtr           m_camera_uniform_buffer_ptr;
-    VkDeviceSize              m_camera_buffer_size_per_swapchain_image;
-    BufferUniquePtr           m_sunLight_uniform_buffer_ptr;
-    VkDeviceSize              m_sunLight_buffer_size_per_swapchain_image;
+
+    BufferHelper<MVPUniform>* m_mvp_buffer_helper;
+    BufferHelper<SunLightUniform>* m_sunLight_buffer_helper;
+    BufferHelper<CameraUniform>* m_camera_buffer_helper;
+
     BufferUniquePtr           m_picking_storage_buffer_ptr;
     VkDeviceSize              m_picking_buffer_size;
 

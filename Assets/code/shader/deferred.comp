@@ -220,7 +220,8 @@ void main()
 		vec3 test;
 		if(decalUVW.x >= -1.0f && decalUVW.x <= 1.0f &&
 		   decalUVW.y >= -1.0f && decalUVW.y <= 1.0f &&
-		   decalUVW.z >= -1.0f && decalUVW.z <= 1.0f)
+		   decalUVW.z >= -1.0f && decalUVW.z <= 1.0f &&
+		   dot(picking.Normal, normalWS) > 0.5f)
 		{
 			vec2 decalUV = clamp(decalUVW.xy * 0.5f + 0.5f, 0.0f, 1.0f);
 			vec4 decalAlbedo = texture(texSampler[0], decalUV);

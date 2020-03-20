@@ -61,7 +61,6 @@ float Engine::getAspect()
 #pragma region 初始化
 Engine::Engine()
     :m_n_last_semaphore_used           (0),
-     m_mvp_buffer_size_per_swapchain_image(0),
      m_is_full_screen                  (false),
      m_width                           (1280),
      m_height                          (720)
@@ -84,7 +83,6 @@ void Engine::init()
     m_model = make_shared<Model>("assets/models/Sponza/Sponza.fbx");
     init_buffers();
     init_image();
-    init_image_view();
     init_sampler();
     m_model->add_combined_image_samplers();
     init_dsgs();
@@ -242,13 +240,15 @@ void Engine::init_swapchain()
 
 void Engine::init_buffers()
 {
-    auto allocator_ptr = MemoryAllocator::create_oneshot(m_device_ptr.get());
-    const auto ub_data_alignment_requirement = m_device_ptr->get_physical_device_properties().core_vk1_0_properties_ptr->limits.min_uniform_buffer_offset_alignment;
+    const auto ub_data_alignment_requirement = 
+        m_device_ptr->get_physical_device_properties().core_vk1_0_properties_ptr->limits.min_uniform_buffer_offset_alignment;
     
     #pragma region 创建texture_indices缓冲
     {
+        auto allocator_ptr = MemoryAllocator::create_oneshot(m_device_ptr.get());
+
         VkDeviceSize size = Utils::round_up(
-            16 * m_model->get_texture_indices()->size(),
+            sizeof(TextureIndicesUniform) * m_model->get_texture_indices()->size(),
             ub_data_alignment_requirement);
         auto create_info_ptr = BufferCreateInfo::create_no_alloc(
             m_device_ptr.get(),
@@ -263,74 +263,19 @@ void Engine::init_buffers()
         allocator_ptr->add_buffer(
             m_texture_indices_uniform_buffer_ptr.get(),
             MemoryFeatureFlagBits::NONE); /* in_required_memory_features */
-    }
-    #pragma endregion
 
-    #pragma region 创建mvp缓冲
-    {
-        m_mvp_buffer_size_per_swapchain_image = Utils::round_up(sizeof(MVPUniform), ub_data_alignment_requirement);
-        const auto ub_data_size_total = N_SWAPCHAIN_IMAGES * m_mvp_buffer_size_per_swapchain_image;
-
-        auto create_info_ptr = BufferCreateInfo::create_no_alloc(
-            m_device_ptr.get(),
-            ub_data_size_total,
-            QueueFamilyFlagBits::GRAPHICS_BIT,
-            SharingMode::EXCLUSIVE,
-            BufferCreateFlagBits::NONE,
-            BufferUsageFlagBits::UNIFORM_BUFFER_BIT);
-        m_mvp_uniform_buffer_ptr = Buffer::create(move(create_info_ptr));
-        m_mvp_uniform_buffer_ptr->set_name("MVP unfiorm buffer");
-
-        allocator_ptr->add_buffer(
-            m_mvp_uniform_buffer_ptr.get(),
-            MemoryFeatureFlagBits::NONE); /* in_required_memory_features */
-    }
-    #pragma endregion
-
-    #pragma region 创建sunLight缓冲
-    {
-        m_sunLight_buffer_size_per_swapchain_image = Utils::round_up(sizeof(SunLightUniform), ub_data_alignment_requirement);
-        const auto ub_data_size_total = N_SWAPCHAIN_IMAGES * m_sunLight_buffer_size_per_swapchain_image;
-
-        auto create_info_ptr = BufferCreateInfo::create_no_alloc(
-            m_device_ptr.get(),
-            ub_data_size_total,
-            QueueFamilyFlagBits::GRAPHICS_BIT | QueueFamilyFlagBits::COMPUTE_BIT,
-            SharingMode::EXCLUSIVE,
-            BufferCreateFlagBits::NONE,
-            BufferUsageFlagBits::UNIFORM_BUFFER_BIT);
-        m_sunLight_uniform_buffer_ptr = Buffer::create(move(create_info_ptr));
-        m_sunLight_uniform_buffer_ptr->set_name("SunLight unfiorm buffer");
-
-        allocator_ptr->add_buffer(
-            m_sunLight_uniform_buffer_ptr.get(),
-            MemoryFeatureFlagBits::NONE); /* in_required_memory_features */
-    }
-    #pragma endregion
-
-    #pragma region 创建camera缓冲
-    {
-        m_camera_buffer_size_per_swapchain_image = Utils::round_up(sizeof(CameraUniform), ub_data_alignment_requirement);
-        const auto ub_data_size_total = N_SWAPCHAIN_IMAGES * m_camera_buffer_size_per_swapchain_image;
-
-        auto create_info_ptr = BufferCreateInfo::create_no_alloc(
-            m_device_ptr.get(),
-            ub_data_size_total,
-            QueueFamilyFlagBits::GRAPHICS_BIT | QueueFamilyFlagBits::COMPUTE_BIT,
-            SharingMode::EXCLUSIVE,
-            BufferCreateFlagBits::NONE,
-            BufferUsageFlagBits::UNIFORM_BUFFER_BIT);
-        m_camera_uniform_buffer_ptr = Buffer::create(move(create_info_ptr));
-        m_camera_uniform_buffer_ptr->set_name("Camera unfiorm buffer");
-
-        allocator_ptr->add_buffer(
-            m_camera_uniform_buffer_ptr.get(),
-            MemoryFeatureFlagBits::NONE); /* in_required_memory_features */
+        m_texture_indices_uniform_buffer_ptr->write(
+            0, /* start_offset */
+            size,
+            m_model->get_texture_indices()->data(),
+            m_device_ptr->get_universal_queue(0));
     }
     #pragma endregion
 
     #pragma region 创建picking缓冲
     {
+        auto allocator_ptr = MemoryAllocator::create_oneshot(m_device_ptr.get());
+
         m_picking_buffer_size = Utils::round_up(sizeof(PickingStorage), ub_data_alignment_requirement);
 
         auto create_info_ptr = BufferCreateInfo::create_no_alloc(
@@ -349,313 +294,28 @@ void Engine::init_buffers()
     }
     #pragma endregion
 
-    m_texture_indices_uniform_buffer_ptr->write(
-        0, /* start_offset */
-        16 * m_model->get_texture_indices()->size(),
-        m_model->get_texture_indices()->data(),
-        m_device_ptr->get_universal_queue(0));
+    #pragma region 创建动态缓冲
+    m_mvp_buffer_helper = new BufferHelper<MVPUniform>(m_device_ptr.get(), "MVP");
+    m_sunLight_buffer_helper = new BufferHelper<SunLightUniform>(m_device_ptr.get(), "SunLight");
+    m_camera_buffer_helper = new BufferHelper<CameraUniform>(m_device_ptr.get(), "Camera");
+    #pragma endregion
 }
 
 void Engine::init_image()
 {
     auto allocator_ptr = MemoryAllocator::create_oneshot(m_device_ptr.get());
 
-    #pragma region 创建深度图像
-    {
-        m_depth_format = SelectSupportedFormat(
-            { Format::D32_SFLOAT,  Format::D32_SFLOAT_S8_UINT,  Format::D24_UNORM_S8_UINT },
-            ImageTiling::OPTIMAL,
-            FormatFeatureFlagBits::DEPTH_STENCIL_ATTACHMENT_BIT | FormatFeatureFlagBits::SAMPLED_IMAGE_BIT);
+    m_depth_format = SelectSupportedFormat(
+        { Format::D32_SFLOAT,  Format::D32_SFLOAT_S8_UINT,  Format::D24_UNORM_S8_UINT },
+        ImageTiling::OPTIMAL,
+        FormatFeatureFlagBits::DEPTH_STENCIL_ATTACHMENT_BIT | FormatFeatureFlagBits::SAMPLED_IMAGE_BIT);
 
-        auto image_create_info_ptr = ImageCreateInfo::create_no_alloc(
-            m_device_ptr.get(),
-            ImageType::_2D,
-            m_depth_format,
-            ImageTiling::OPTIMAL,
-            ImageUsageFlagBits::DEPTH_STENCIL_ATTACHMENT_BIT
-            | ImageUsageFlagBits::SAMPLED_BIT,
-            m_width,
-            m_height,
-            1,
-            1,
-            SampleCountFlagBits::_1_BIT,
-            QueueFamilyFlagBits::COMPUTE_BIT | QueueFamilyFlagBits::GRAPHICS_BIT,
-            SharingMode::EXCLUSIVE,
-            false,
-            ImageCreateFlagBits::NONE,
-            ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-
-        m_depth_image_ptr = Image::create(move(image_create_info_ptr));
-        m_depth_image_ptr->set_name("Depth image");
-
-        allocator_ptr->add_image_whole(
-            m_depth_image_ptr.get(),
-            MemoryFeatureFlagBits::DEVICE_LOCAL_BIT);
-    }
-    #pragma endregion
-
-    #pragma region 创建深度图像2(权宜之计)
-    {
-        auto image_create_info_ptr = ImageCreateInfo::create_no_alloc(
-            m_device_ptr.get(),
-            ImageType::_2D,
-            Format::R16_SNORM,
-            ImageTiling::OPTIMAL,
-            ImageUsageFlagBits::COLOR_ATTACHMENT_BIT
-            | ImageUsageFlagBits::SAMPLED_BIT,
-            m_width,
-            m_height,
-            1,
-            1,
-            SampleCountFlagBits::_1_BIT,
-            QueueFamilyFlagBits::COMPUTE_BIT | QueueFamilyFlagBits::GRAPHICS_BIT,
-            SharingMode::EXCLUSIVE,
-            false,
-            ImageCreateFlagBits::NONE,
-            ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-
-        m_depth_image2_ptr = Image::create(move(image_create_info_ptr));
-        m_depth_image2_ptr->set_name("Depth image2");
-
-        allocator_ptr->add_image_whole(
-            m_depth_image2_ptr.get(),
-            MemoryFeatureFlagBits::DEVICE_LOCAL_BIT);
-    }
-    #pragma endregion
-
-    #pragma region 创建切线框架图像
-    {
-        auto image_create_info_ptr = ImageCreateInfo::create_no_alloc(
-            m_device_ptr.get(),
-            ImageType::_2D,
-            Format::A2B10G10R10_UNORM_PACK32,
-            ImageTiling::OPTIMAL,
-            ImageUsageFlagBits::COLOR_ATTACHMENT_BIT
-            | ImageUsageFlagBits::SAMPLED_BIT,
-            m_width,
-            m_height,
-            1,
-            1,
-            SampleCountFlagBits::_1_BIT,
-            QueueFamilyFlagBits::COMPUTE_BIT | QueueFamilyFlagBits::GRAPHICS_BIT,
-            SharingMode::EXCLUSIVE,
-            false,
-            ImageCreateFlagBits::NONE,
-            ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-
-        m_tangent_frame_image_ptr = Image::create(move(image_create_info_ptr));
-        m_tangent_frame_image_ptr->set_name("Tangent frame image");
-
-        allocator_ptr->add_image_whole(
-            m_tangent_frame_image_ptr.get(),
-            MemoryFeatureFlagBits::DEVICE_LOCAL_BIT);
-    }
-    #pragma endregion
-
-    #pragma region 创建UV和深度梯度图像
-    {
-        auto image_create_info_ptr = ImageCreateInfo::create_no_alloc(
-            m_device_ptr.get(),
-            ImageType::_2D,
-            Format::R16G16B16A16_SNORM,
-            ImageTiling::OPTIMAL,
-            ImageUsageFlagBits::COLOR_ATTACHMENT_BIT
-            | ImageUsageFlagBits::SAMPLED_BIT,
-            m_width,
-            m_height,
-            1,
-            1,
-            SampleCountFlagBits::_1_BIT,
-            QueueFamilyFlagBits::COMPUTE_BIT | QueueFamilyFlagBits::GRAPHICS_BIT,
-            SharingMode::EXCLUSIVE,
-            false,
-            ImageCreateFlagBits::NONE,
-            ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-
-        m_uv_and_depth_gradient_image_ptr = Image::create(move(image_create_info_ptr));
-        m_uv_and_depth_gradient_image_ptr->set_name("UV and depth gradient image");
-
-        allocator_ptr->add_image_whole(
-            m_uv_and_depth_gradient_image_ptr.get(),
-            MemoryFeatureFlagBits::DEVICE_LOCAL_BIT);
-    }
-    #pragma endregion
-
-    #pragma region 创建UV梯度图像
-    {
-        auto image_create_info_ptr = ImageCreateInfo::create_no_alloc(
-            m_device_ptr.get(),
-            ImageType::_2D,
-            Format::R16G16B16A16_SNORM,
-            ImageTiling::OPTIMAL,
-            ImageUsageFlagBits::COLOR_ATTACHMENT_BIT
-            | ImageUsageFlagBits::SAMPLED_BIT,
-            m_width,
-            m_height,
-            1,
-            1,
-            SampleCountFlagBits::_1_BIT,
-            QueueFamilyFlagBits::COMPUTE_BIT | QueueFamilyFlagBits::GRAPHICS_BIT,
-            SharingMode::EXCLUSIVE,
-            false,
-            ImageCreateFlagBits::NONE,
-            ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-
-        m_uv_gradient_image_ptr = Image::create(move(image_create_info_ptr));
-        m_uv_gradient_image_ptr->set_name("UV gradient image");
-
-        allocator_ptr->add_image_whole(
-            m_uv_gradient_image_ptr.get(),
-            MemoryFeatureFlagBits::DEVICE_LOCAL_BIT);
-    }
-    #pragma endregion
-
-    #pragma region 创建材质ID图像
-    {
-        auto image_create_info_ptr = ImageCreateInfo::create_no_alloc(
-            m_device_ptr.get(),
-            ImageType::_2D,
-            Format::R8_UINT,
-            ImageTiling::OPTIMAL,
-            ImageUsageFlagBits::COLOR_ATTACHMENT_BIT
-            | ImageUsageFlagBits::SAMPLED_BIT,
-            m_width,
-            m_height,
-            1,
-            1,
-            SampleCountFlagBits::_1_BIT,
-            QueueFamilyFlagBits::COMPUTE_BIT | QueueFamilyFlagBits::GRAPHICS_BIT,
-            SharingMode::EXCLUSIVE,
-            false,
-            ImageCreateFlagBits::NONE,
-            ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-
-        m_material_id_image_ptr = Image::create(move(image_create_info_ptr));
-        m_material_id_image_ptr->set_name("material id image");
-
-        allocator_ptr->add_image_whole(
-            m_material_id_image_ptr.get(),
-            MemoryFeatureFlagBits::DEVICE_LOCAL_BIT);
-    }
-    #pragma endregion
-}
-
-void Engine::init_image_view()
-{
-    #pragma region 创建深度图像视图
-    {
-        auto image_view_create_info_ptr = ImageViewCreateInfo::create_2D(
-            m_device_ptr.get(),
-            m_depth_image_ptr.get(),
-            0,
-            0,
-            1,
-            ImageAspectFlagBits::DEPTH_BIT,
-            m_depth_format,
-            ComponentSwizzle::R,
-            ComponentSwizzle::G,
-            ComponentSwizzle::B,
-            ComponentSwizzle::A);
-
-        m_depth_image_view_ptr = ImageView::create(move(image_view_create_info_ptr));
-    }
-    #pragma endregion
-
-    #pragma region 创建深度图像视图2(权宜之计)
-    {
-        auto image_view_create_info_ptr = ImageViewCreateInfo::create_2D(
-            m_device_ptr.get(),
-            m_depth_image2_ptr.get(),
-            0,
-            0,
-            1,
-            ImageAspectFlagBits::COLOR_BIT,
-            Format::R16_SNORM,
-            ComponentSwizzle::R,
-            ComponentSwizzle::G,
-            ComponentSwizzle::B,
-            ComponentSwizzle::A);
-
-        m_depth_image_view2_ptr = ImageView::create(move(image_view_create_info_ptr));
-    }
-    #pragma endregion
-
-    #pragma region 创建切线框架图像视图
-    {
-        auto image_view_create_info_ptr = ImageViewCreateInfo::create_2D(
-            m_device_ptr.get(),
-            m_tangent_frame_image_ptr.get(),
-            0,
-            0,
-            1,
-            ImageAspectFlagBits::COLOR_BIT,
-            Format::A2B10G10R10_UNORM_PACK32,
-            ComponentSwizzle::R,
-            ComponentSwizzle::G,
-            ComponentSwizzle::B,
-            ComponentSwizzle::A);
-
-        m_tangent_frame_image_view_ptr = ImageView::create(move(image_view_create_info_ptr));
-    }
-    #pragma endregion
-
-    #pragma region 创建UV和深度梯度图像视图
-    {
-        auto image_view_create_info_ptr = ImageViewCreateInfo::create_2D(
-            m_device_ptr.get(),
-            m_uv_and_depth_gradient_image_ptr.get(),
-            0,
-            0,
-            1,
-            ImageAspectFlagBits::COLOR_BIT,
-            Format::R16G16B16A16_SNORM,
-            ComponentSwizzle::R,
-            ComponentSwizzle::G,
-            ComponentSwizzle::B,
-            ComponentSwizzle::A);
-
-        m_uv_and_depth_gradient_image_view_ptr = ImageView::create(move(image_view_create_info_ptr));
-    }
-    #pragma endregion
-
-    #pragma region 创建UV梯度图像视图
-    {
-        auto image_view_create_info_ptr = ImageViewCreateInfo::create_2D(
-            m_device_ptr.get(),
-            m_uv_gradient_image_ptr.get(),
-            0,
-            0,
-            1,
-            ImageAspectFlagBits::COLOR_BIT,
-            Format::R16G16B16A16_SNORM,
-            ComponentSwizzle::R,
-            ComponentSwizzle::G,
-            ComponentSwizzle::B,
-            ComponentSwizzle::A);
-
-        m_uv_gradient_image_view_ptr = ImageView::create(move(image_view_create_info_ptr));
-    }
-    #pragma endregion
-
-    #pragma region 创建材质ID图像视图
-    {
-        auto image_view_create_info_ptr = ImageViewCreateInfo::create_2D(
-            m_device_ptr.get(),
-            m_material_id_image_ptr.get(),
-            0,
-            0,
-            1,
-            ImageAspectFlagBits::COLOR_BIT,
-            Format::R8_UINT,
-            ComponentSwizzle::R,
-            ComponentSwizzle::IDENTITY,
-            ComponentSwizzle::IDENTITY,
-            ComponentSwizzle::IDENTITY);
-
-        m_material_id_image_view_ptr = ImageView::create(move(image_view_create_info_ptr));
-    }
-    #pragma endregion
-
+    create_image_source(m_depth_image_ptr, m_depth_image_view_ptr, "Depth", m_depth_format, true);
+    create_image_source(m_depth_image2_ptr, m_depth_image_view2_ptr, "Depth2", Format::R16_SNORM);
+    create_image_source(m_tangent_frame_image_ptr, m_tangent_frame_image_view_ptr, "Tangent", Format::A2B10G10R10_UNORM_PACK32);
+    create_image_source(m_uv_and_depth_gradient_image_ptr, m_uv_and_depth_gradient_image_view_ptr, "UV and Depth Gradient", Format::R16G16B16A16_SNORM);
+    create_image_source(m_uv_gradient_image_ptr, m_uv_gradient_image_view_ptr, "UV Gradient", Format::R16G16B16A16_SNORM);
+    create_image_source(m_material_id_image_ptr, m_material_id_image_view_ptr, "Material ID", Format::R8_UINT);
 }
 
 void Engine::init_sampler()
@@ -801,9 +461,9 @@ void Engine::init_dsgs()
         1, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
         0, /* n_binding */
         DescriptorSet::DynamicUniformBufferBindingElement(
-            m_mvp_uniform_buffer_ptr.get(),
+            m_mvp_buffer_helper->getUniform(),
             0, /* in_start_offset */
-            m_mvp_buffer_size_per_swapchain_image));
+            m_mvp_buffer_helper->getSizePerSwapchainImage()));
     #pragma endregion
 
     #pragma region 2:deferred所需的参数
@@ -811,17 +471,17 @@ void Engine::init_dsgs()
         2, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
         0, /* n_binding */
         DescriptorSet::DynamicUniformBufferBindingElement(
-            m_sunLight_uniform_buffer_ptr.get(),
+            m_sunLight_buffer_helper->getUniform(),
             0, /* in_start_offset */
-            m_sunLight_buffer_size_per_swapchain_image));
+            m_sunLight_buffer_helper->getSizePerSwapchainImage()));
 
     m_dsg_ptr->set_binding_item(
         2, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
         1, /* n_binding */
         DescriptorSet::DynamicUniformBufferBindingElement(
-            m_camera_uniform_buffer_ptr.get(),
+            m_camera_buffer_helper->getUniform(),
             0, /* in_start_offset */
-            m_camera_buffer_size_per_swapchain_image));
+            m_camera_buffer_helper->getSizePerSwapchainImage()));
 
     m_dsg_ptr->set_binding_item(
         2, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
@@ -898,9 +558,9 @@ void Engine::init_dsgs()
         4 + N_SWAPCHAIN_IMAGES, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
         1, /* n_binding */
         DescriptorSet::DynamicUniformBufferBindingElement(
-            m_camera_uniform_buffer_ptr.get(),
+            m_camera_buffer_helper->getUniform(),
             0, /* in_start_offset */
-            m_camera_buffer_size_per_swapchain_image));
+            m_camera_buffer_helper->getSizePerSwapchainImage()));
     m_dsg_ptr->set_binding_item(
         4 + N_SWAPCHAIN_IMAGES, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
         2, /* n_binding */
@@ -1262,9 +922,9 @@ void Engine::init_command_buffers()
                 AccessFlagBits::UNIFORM_READ_BIT,               /* in_destination_access_mask */
                 universal_queue_ptr->get_queue_family_index(),         /* in_src_queue_family_index  */
                 universal_queue_ptr->get_queue_family_index(),         /* in_dst_queue_family_index  */
-                m_mvp_uniform_buffer_ptr.get(),
-                m_mvp_buffer_size_per_swapchain_image * n_command_buffer, /* in_offset                  */
-                m_mvp_buffer_size_per_swapchain_image);
+                m_mvp_buffer_helper->getUniform(),
+                m_mvp_buffer_helper->getSizePerSwapchainImage() * n_command_buffer, /* in_offset                  */
+                m_mvp_buffer_helper->getSizePerSwapchainImage());
 
             cmd_buffer_ptr->record_pipeline_barrier(
                 PipelineStageFlagBits::HOST_BIT,
@@ -1376,7 +1036,7 @@ void Engine::init_command_buffers()
                 m_renderpass_ptr.get(),
                 SubpassContents::INLINE);
         
-            const uint32_t data_ub_offset = static_cast<uint32_t>(m_mvp_buffer_size_per_swapchain_image * n_command_buffer);
+            const uint32_t data_ub_offset = static_cast<uint32_t>(m_mvp_buffer_helper->getSizePerSwapchainImage() * n_command_buffer);
             DescriptorSet* ds_ptr[1] = { m_dsg_ptr->get_descriptor_set(1) };
 
             cmd_buffer_ptr->record_bind_pipeline(
@@ -1405,18 +1065,18 @@ void Engine::init_command_buffers()
                 AccessFlagBits::UNIFORM_READ_BIT,               /* in_destination_access_mask */
                 universal_queue_ptr->get_queue_family_index(),         /* in_src_queue_family_index  */
                 universal_queue_ptr->get_queue_family_index(),         /* in_dst_queue_family_index  */
-                m_sunLight_uniform_buffer_ptr.get(),
-                m_sunLight_buffer_size_per_swapchain_image * n_command_buffer, /* in_offset                  */
-                m_sunLight_buffer_size_per_swapchain_image);
+                m_sunLight_buffer_helper->getUniform(),
+                m_sunLight_buffer_helper->getSizePerSwapchainImage()* n_command_buffer, /* in_offset                  */
+                m_sunLight_buffer_helper->getSizePerSwapchainImage());
 
             BufferBarrier buffer_barrier2(
                 AccessFlagBits::HOST_WRITE_BIT,                 /* in_source_access_mask      */
                 AccessFlagBits::UNIFORM_READ_BIT,               /* in_destination_access_mask */
                 universal_queue_ptr->get_queue_family_index(),         /* in_src_queue_family_index  */
                 universal_queue_ptr->get_queue_family_index(),         /* in_dst_queue_family_index  */
-                m_camera_uniform_buffer_ptr.get(),
-                m_camera_buffer_size_per_swapchain_image * n_command_buffer, /* in_offset                  */
-                m_camera_buffer_size_per_swapchain_image);
+                m_camera_buffer_helper->getUniform(),
+                m_camera_buffer_helper->getSizePerSwapchainImage() * n_command_buffer, /* in_offset                  */
+                m_camera_buffer_helper->getSizePerSwapchainImage());
         
             BufferBarrier buffer_barriers[2] = { buffer_barrier1 , buffer_barrier2 };
             cmd_buffer_ptr->record_pipeline_barrier(
@@ -1554,7 +1214,7 @@ void Engine::init_command_buffers()
 
         #pragma region 获取屏幕中间像素的位置和法线信息
         {
-            const uint32_t data_ub_offset[] = { static_cast<uint32_t>(m_camera_buffer_size_per_swapchain_image * n_command_buffer) };
+            const uint32_t data_ub_offset[] = { static_cast<uint32_t>(m_camera_buffer_helper->getSizePerSwapchainImage() * n_command_buffer) };
 
             cmd_buffer_ptr->record_bind_pipeline(
                 PipelineBindPoint::COMPUTE,
@@ -1611,8 +1271,8 @@ void Engine::init_command_buffers()
         #pragma region 延迟纹理采样和光照
         {
             const uint32_t data_ub_offset[] = {
-                static_cast<uint32_t>(m_sunLight_buffer_size_per_swapchain_image * n_command_buffer),
-                static_cast<uint32_t>(m_camera_buffer_size_per_swapchain_image * n_command_buffer)
+                static_cast<uint32_t>(m_sunLight_buffer_helper->getSizePerSwapchainImage() * n_command_buffer),
+                static_cast<uint32_t>(m_camera_buffer_helper->getSizePerSwapchainImage() * n_command_buffer)
             };
 
             cmd_buffer_ptr->record_bind_pipeline(
@@ -1735,7 +1395,6 @@ void Engine::recreate_swapchain()
 
     init_swapchain();
     init_image();
-    init_image_view();
     init_dsgs();
     init_framebuffers();
     init_render_pass();
@@ -1817,11 +1476,6 @@ void Engine::draw_frame()
             recreate_swapchain();
             return;
         }
-        else if (acquire_result != SwapchainOperationErrorCode::SUCCESS 
-            && acquire_result != SwapchainOperationErrorCode::SUBOPTIMAL)
-        {
-            throw runtime_error("failed to acquire swap chain image!");
-        }
     }
 
     /* Submit work chunk and present */
@@ -1862,13 +1516,10 @@ void Engine::draw_frame()
 
 void Engine::update_data(uint32_t in_n_swapchain_image)
 {
-    static auto startTime = chrono::high_resolution_clock::now();
     static auto lastTime = chrono::high_resolution_clock::now();
     auto currentTime = chrono::high_resolution_clock::now();
     float time = chrono::duration<float, chrono::seconds::period>(currentTime - lastTime).count();
     lastTime = currentTime;
-
-
     if (m_key->IsPressed(KeyID::KEY_ID_FORWARD))
         m_camera->ProcessKeyboard(FORWARD, time);
     if (m_key->IsPressed(KeyID::KEY_ID_BACKWARD))
@@ -1878,34 +1529,24 @@ void Engine::update_data(uint32_t in_n_swapchain_image)
     if (m_key->IsPressed(KeyID::KEY_ID_RIGHT))
         m_camera->ProcessKeyboard(RIGHT, time);
 
+    Queue* queue = m_device_ptr->get_universal_queue(0);
+
     MVPUniform mvp;
     mvp.model = scale(mat4(1.0f), vec3(0.01f, 0.01f, 0.01f));
     mvp.view = m_camera->GetViewMatrix();
     mvp.proj = m_camera->GetProjMatrix();
-
-    m_mvp_uniform_buffer_ptr->write(
-        in_n_swapchain_image * m_mvp_buffer_size_per_swapchain_image, /* start_offset */
-        sizeof(mvp),
-        &mvp,
-        m_device_ptr->get_universal_queue(0));
+    m_mvp_buffer_helper->update(queue, &mvp, in_n_swapchain_image);
 
     SunLightUniform sun_light;
     sun_light.SunDirectionWS = vec3(0.5f, 0.1f, 0.5f);
     sun_light.SunIrradiance = vec3(10.0f, 10.0f, 10.0f);
-    m_sunLight_uniform_buffer_ptr->write(
-        in_n_swapchain_image * m_sunLight_buffer_size_per_swapchain_image, /* start_offset */
-        sizeof(sun_light),
-        &sun_light,
-        m_device_ptr->get_universal_queue(0));
+    m_sunLight_buffer_helper->update(queue, &sun_light, in_n_swapchain_image);
 
     CameraUniform camera;
     camera.CameraPosWS = m_camera->m_position;
     camera.InvViewProj = inverse(mvp.proj * mvp.view);
-    m_camera_uniform_buffer_ptr->write(
-        in_n_swapchain_image * m_camera_buffer_size_per_swapchain_image, /* start_offset */
-        sizeof(camera),
-        &camera,
-        m_device_ptr->get_universal_queue(0));
+    m_camera_buffer_helper->update(queue, &camera, in_n_swapchain_image);
+
 }
 
 void Engine::mouse_callback(CallbackArgument* argumentPtr)
@@ -2018,12 +1659,17 @@ void Engine::deinit()
     m_rendering_surface_ptr.reset();
     
     m_texture_indices_uniform_buffer_ptr.reset();
-    m_mvp_uniform_buffer_ptr.reset();
-    m_sunLight_uniform_buffer_ptr.reset();
-    m_camera_uniform_buffer_ptr.reset();
+
+    delete m_mvp_buffer_helper;
+    delete m_sunLight_buffer_helper;
+    delete m_camera_buffer_helper;
+
     m_picking_storage_buffer_ptr.reset();
+
     m_fs_ptr.reset();
     m_vs_ptr.reset();
+    m_picking_cs_ptr.reset();
+    m_deferred_cs_ptr.reset();
 
     m_model.reset();
 
@@ -2056,6 +1702,54 @@ ShaderModuleStageEntryPoint* Engine::create_shader(string file, ShaderStage type
         "main",
         move(shader_module_ptr),
         type);
+}
+
+void Engine::create_image_source(ImageUniquePtr& image, ImageViewUniquePtr& image_view, string name, Format format, bool isDepthImage)
+{
+    auto allocator_ptr = MemoryAllocator::create_oneshot(m_device_ptr.get());
+
+    ImageUsageFlagBits usage = isDepthImage ? ImageUsageFlagBits::DEPTH_STENCIL_ATTACHMENT_BIT : ImageUsageFlagBits::COLOR_ATTACHMENT_BIT;
+    ImageAspectFlagBits aspect = isDepthImage ? ImageAspectFlagBits::DEPTH_BIT : ImageAspectFlagBits::COLOR_BIT;
+    ImageLayout layout = isDepthImage ? ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL : ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+    
+    auto image_create_info_ptr = ImageCreateInfo::create_no_alloc(
+        m_device_ptr.get(),
+        ImageType::_2D,
+        format,
+        ImageTiling::OPTIMAL,
+        usage | ImageUsageFlagBits::SAMPLED_BIT,
+        m_width,
+        m_height,
+        1,
+        1,
+        SampleCountFlagBits::_1_BIT,
+        QueueFamilyFlagBits::COMPUTE_BIT | QueueFamilyFlagBits::GRAPHICS_BIT,
+        SharingMode::EXCLUSIVE,
+        false,
+        ImageCreateFlagBits::NONE,
+        layout);
+
+    image = Image::create(move(image_create_info_ptr));
+    image->set_name(name + " Image");
+
+    allocator_ptr->add_image_whole(
+        image.get(),
+        MemoryFeatureFlagBits::DEVICE_LOCAL_BIT);
+
+    auto image_view_create_info_ptr = ImageViewCreateInfo::create_2D(
+        m_device_ptr.get(),
+        image.get(),
+        0,
+        0,
+        1,
+        aspect,
+        format,
+        ComponentSwizzle::R,
+        ComponentSwizzle::G,
+        ComponentSwizzle::B,
+        ComponentSwizzle::A);
+
+    image_view = ImageView::create(move(image_view_create_info_ptr));
 }
 
 void Engine::on_validation_callback(DebugMessageSeverityFlags in_severity, const char* in_message_ptr)
