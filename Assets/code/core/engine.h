@@ -29,6 +29,12 @@ struct CameraUniform
     mat4 InvViewProj;
 };
 
+struct PickingStorage
+{
+    vec3 Position;
+    vec3 Normal;
+};
+
 class Engine
 {
 public:
@@ -43,7 +49,7 @@ public:
     void run ();
 
     BaseDevice* getDevice();
-    PipelineLayout* getPineLine(bool is_gfx = true);
+    PipelineLayout* getPineLine(int id = 0);
     Sampler* getSampler();
     vector<DescriptorSet::CombinedImageSamplerBindingElement>* getTextureCombinedImageSamplersBinding();
     float getAspect();
@@ -63,13 +69,17 @@ private:
     void key_release_callback(CallbackArgument* argumentPtr);
     void recreate_swapchain();
 
-    void init_window         ();
-    void init_swapchain      ();
+    void init_window        ();
+    void init_swapchain     ();
 
-    void init_buffers        ();
-    void init_dsgs           ();
+    void init_buffers       ();
+    void init_image         ();
+    void init_image_view    ();
+    void init_sampler       ();
+    void init_dsgs          ();
 
     void init_render_pass    ();
+    ShaderModuleStageEntryPoint* create_shader (string file, ShaderStage type, string name);
     void init_shaders        ();
     void init_gfx_pipelines  ();
     void init_compute_pipelines();
@@ -78,9 +88,7 @@ private:
         const vector<Format>& candidates,
         ImageTiling tiling,
         FormatFeatureFlags features);
-    void init_image          ();
-    void init_image_view();
-    void init_sampler();
+
     void init_framebuffers   ();
     void init_command_buffers();
 
@@ -117,10 +125,12 @@ private:
     SubPassID                                    m_render_pass_subpass_GBuffer_id;
     unique_ptr<ShaderModuleStageEntryPoint>      m_vs_ptr;
     unique_ptr<ShaderModuleStageEntryPoint>      m_fs_ptr;
-    unique_ptr<ShaderModuleStageEntryPoint>      m_cs_ptr;
+    unique_ptr<ShaderModuleStageEntryPoint>      m_picking_cs_ptr;
+    unique_ptr<ShaderModuleStageEntryPoint>      m_deferred_cs_ptr;
 
     PipelineID                                   m_gfx_pipeline_id;
-    PipelineID                                   m_compute_pipeline_id;
+    PipelineID                                   m_picking_compute_pipeline_id;
+    PipelineID                                   m_deferred_compute_pipeline_id;
 
 
     vector<DescriptorSet::StorageImageBindingElement>   m_color_image_ptr;
@@ -160,5 +170,7 @@ private:
     VkDeviceSize              m_camera_buffer_size_per_swapchain_image;
     BufferUniquePtr           m_sunLight_uniform_buffer_ptr;
     VkDeviceSize              m_sunLight_buffer_size_per_swapchain_image;
+    BufferUniquePtr           m_picking_storage_buffer_ptr;
+    VkDeviceSize              m_picking_buffer_size;
 
 };

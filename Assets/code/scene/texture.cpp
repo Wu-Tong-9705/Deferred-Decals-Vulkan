@@ -96,7 +96,7 @@ void Texture::load_texture(string path)
 		&mipmapRawDatas);
 
 	m_texture_image_ptr = Image::create(move(image_create_info_ptr));
-	m_texture_image_ptr->set_name_formatted("Diffuse texture image #%s", m_path.c_str());
+	m_texture_image_ptr->set_name_formatted("Texture #%s", m_path.c_str());
 
 	allocator_ptr->add_image_whole(
 		m_texture_image_ptr.get(),

@@ -34,6 +34,18 @@ void Model::load_model(string const& path)
 	}
 	m_directory = path.substr(0, path.find_last_of('/'));
 
+	//加载贴花
+	string decal_path("Assets/decals");
+	char decal_str[128];
+	for (unsigned int i = 0; i < N_DECALS; i++)
+	{
+		sprintf_s(decal_str, "BrickDamageDecal%02d.png", i + 1);
+		m_textures.push_back(make_shared<Texture>(decal_str, decal_path, m_textures.size()));
+
+		sprintf_s(decal_str, "BrickDamageDecal%02d_NM.png", i + 1);
+		m_textures.push_back(make_shared<Texture>(decal_str, decal_path, m_textures.size()));
+	}
+
 	//加载材质
 	for (unsigned int i = 0; i < scene->mNumMaterials; i++)
 	{
@@ -44,6 +56,8 @@ void Model::load_model(string const& path)
 		m_materials.back()->set_texture(load_texture_for_material(scene->mMaterials[i], aiTextureType_AMBIENT), aiTextureType_AMBIENT);
 	}
 	init_texture_indices();
+
+
 
 	//加载网格
 	for (int i = 0; i < scene->mNumMeshes; i++)

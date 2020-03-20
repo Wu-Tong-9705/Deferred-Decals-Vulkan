@@ -22,18 +22,24 @@ BaseDevice* Engine::getDevice()
     return m_device_ptr.get();
 }
 
-PipelineLayout* Engine::getPineLine(bool is_gfx)
+PipelineLayout* Engine::getPineLine(int id)
 {
-    if (is_gfx) 
+    if (id == 0)
     {
         auto gfx_pipeline_manager_ptr(m_device_ptr->get_graphics_pipeline_manager());
-        return gfx_pipeline_manager_ptr->get_pipeline_layout(m_gfx_pipeline_id);    
+        return gfx_pipeline_manager_ptr->get_pipeline_layout(m_gfx_pipeline_id);
+    }
+    else if(id == 1)
+    {
+        auto compute_pipeline_manager_ptr(m_device_ptr->get_compute_pipeline_manager());
+        return compute_pipeline_manager_ptr->get_pipeline_layout(m_picking_compute_pipeline_id);
     }
     else
     {
         auto compute_pipeline_manager_ptr(m_device_ptr->get_compute_pipeline_manager());
-        return compute_pipeline_manager_ptr->get_pipeline_layout(m_compute_pipeline_id);
+        return compute_pipeline_manager_ptr->get_pipeline_layout(m_deferred_compute_pipeline_id);
     }
+
 }
 
 Sampler* Engine::getSampler()
@@ -65,7 +71,7 @@ Engine::Engine()
 
 void Engine::init()
 {
-    m_camera = make_shared<Camera>(vec3(0.0f, 0.0f, 3.0f));
+    m_camera = make_shared<Camera>(vec3(-11.5f, 1.85f, -0.45f));
     m_camera->SetAsActive();
     m_key = make_shared<Key>();
     
@@ -323,6 +329,25 @@ void Engine::init_buffers()
     }
     #pragma endregion
 
+    #pragma region 创建picking缓冲
+    {
+        m_picking_buffer_size = Utils::round_up(sizeof(PickingStorage), ub_data_alignment_requirement);
+
+        auto create_info_ptr = BufferCreateInfo::create_no_alloc(
+            m_device_ptr.get(),
+            m_picking_buffer_size,
+            QueueFamilyFlagBits::GRAPHICS_BIT | QueueFamilyFlagBits::COMPUTE_BIT,
+            SharingMode::EXCLUSIVE,
+            BufferCreateFlagBits::NONE,
+            BufferUsageFlagBits::STORAGE_BUFFER_BIT);
+        m_picking_storage_buffer_ptr = Buffer::create(move(create_info_ptr));
+        m_picking_storage_buffer_ptr->set_name("Picking unfiorm buffer");
+
+        allocator_ptr->add_buffer(
+            m_picking_storage_buffer_ptr.get(),
+            MemoryFeatureFlagBits::NONE); /* in_required_memory_features */
+    }
+    #pragma endregion
 
     m_texture_indices_uniform_buffer_ptr->write(
         0, /* start_offset */
@@ -358,7 +383,7 @@ void Engine::init_image()
             SharingMode::EXCLUSIVE,
             false,
             ImageCreateFlagBits::NONE,
-            ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+            ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
         m_depth_image_ptr = Image::create(move(image_create_info_ptr));
         m_depth_image_ptr->set_name("Depth image");
@@ -658,9 +683,9 @@ void Engine::init_sampler()
 void Engine::init_dsgs()
 {
     #pragma region 创建描述符集群
-    auto dsg_create_info_ptrs = vector<DescriptorSetCreateInfoUniquePtr>(7);
+    auto dsg_create_info_ptrs = vector<DescriptorSetCreateInfoUniquePtr>(8);
 
-    //0:模型纹理及其材质
+    //0:贴花/模型纹理/材质索引
     dsg_create_info_ptrs[0] = DescriptorSetCreateInfo::create();
     dsg_create_info_ptrs[0]->add_binding(
         0, /* n_binding */
@@ -681,7 +706,7 @@ void Engine::init_dsgs()
         1, /* n_elements */
         ShaderStageFlagBits::VERTEX_BIT);
 
-    //2:计算着色器所需的参数
+    //2:deferred所需的参数
     dsg_create_info_ptrs[2] = DescriptorSetCreateInfo::create();
     dsg_create_info_ptrs[2]->add_binding(
         0, /* n_binding */
@@ -693,8 +718,13 @@ void Engine::init_dsgs()
         DescriptorType::UNIFORM_BUFFER_DYNAMIC,
         1, /* n_elements */
         ShaderStageFlagBits::COMPUTE_BIT);
+    dsg_create_info_ptrs[2]->add_binding(
+        2, /* n_binding */
+        DescriptorType::STORAGE_BUFFER,
+        1, /* n_elements */
+        ShaderStageFlagBits::COMPUTE_BIT);
 
-    //3:用于计算着色器读取的GBuffer
+    //3:用于deferred读取的GBuffer
     dsg_create_info_ptrs[3] = DescriptorSetCreateInfo::create();
     for (int i = 0; i < 5; i++)
     {
@@ -716,6 +746,34 @@ void Engine::init_dsgs()
             ShaderStageFlagBits::COMPUTE_BIT);
     }
 
+    //5：picking所需的参数
+    dsg_create_info_ptrs[4 + N_SWAPCHAIN_IMAGES] = DescriptorSetCreateInfo::create();
+    dsg_create_info_ptrs[4 + N_SWAPCHAIN_IMAGES]->add_binding(
+        0, /* n_binding */
+        DescriptorType::STORAGE_BUFFER,
+        1, /* n_elements */
+        ShaderStageFlagBits::COMPUTE_BIT);
+    dsg_create_info_ptrs[4 + N_SWAPCHAIN_IMAGES]->add_binding(
+        1, /* n_binding */
+        DescriptorType::UNIFORM_BUFFER_DYNAMIC,
+        1, /* n_elements */
+        ShaderStageFlagBits::COMPUTE_BIT);
+    dsg_create_info_ptrs[4 + N_SWAPCHAIN_IMAGES]->add_binding(
+        2, /* n_binding */
+        DescriptorType::COMBINED_IMAGE_SAMPLER,
+        1, /* n_elements */
+        ShaderStageFlagBits::COMPUTE_BIT);
+    dsg_create_info_ptrs[4 + N_SWAPCHAIN_IMAGES]->add_binding(
+        3, /* n_binding */
+        DescriptorType::COMBINED_IMAGE_SAMPLER,
+        1, /* n_elements */
+        ShaderStageFlagBits::COMPUTE_BIT);
+    dsg_create_info_ptrs[4 + N_SWAPCHAIN_IMAGES]->add_binding(
+        4, /* n_binding */
+        DescriptorType::COMBINED_IMAGE_SAMPLER,
+        1, /* n_elements */
+        ShaderStageFlagBits::COMPUTE_BIT);
+
     m_dsg_ptr = DescriptorSetGroup::create(
         m_device_ptr.get(),
         dsg_create_info_ptrs);
@@ -723,7 +781,7 @@ void Engine::init_dsgs()
 
     #pragma region 为描述符集绑定具体资源
 
-    #pragma region 0:模型纹理及其材质索引信息
+    #pragma region 0:贴花/模型纹理/材质索引
     m_dsg_ptr->set_binding_item(
         0, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
         0, /* n_binding */
@@ -748,7 +806,7 @@ void Engine::init_dsgs()
             m_mvp_buffer_size_per_swapchain_image));
     #pragma endregion
 
-    #pragma region 2:计算着色器所需的参数
+    #pragma region 2:deferred所需的参数
     m_dsg_ptr->set_binding_item(
         2, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
         0, /* n_binding */
@@ -764,9 +822,17 @@ void Engine::init_dsgs()
             m_camera_uniform_buffer_ptr.get(),
             0, /* in_start_offset */
             m_camera_buffer_size_per_swapchain_image));
+
+    m_dsg_ptr->set_binding_item(
+        2, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
+        2, /* n_binding */
+        DescriptorSet::StorageBufferBindingElement(
+            m_picking_storage_buffer_ptr.get(),
+            0, /* in_start_offset */
+            m_picking_buffer_size));
     #pragma endregion
 
-    #pragma region 3:用于计算着色器读取的GBuffer
+    #pragma region 3:用于deferred读取的GBuffer
     m_dsg_ptr->set_binding_item(
         3, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
         0, /* n_binding */
@@ -820,6 +886,45 @@ void Engine::init_dsgs()
     }
     #pragma endregion
     
+    #pragma region 5:picking所需的参数和GBuffer
+    m_dsg_ptr->set_binding_item(
+        4 + N_SWAPCHAIN_IMAGES, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
+        0, /* n_binding */
+        DescriptorSet::StorageBufferBindingElement(
+            m_picking_storage_buffer_ptr.get(),
+            0, /* in_start_offset */
+            m_picking_buffer_size));
+    m_dsg_ptr->set_binding_item(
+        4 + N_SWAPCHAIN_IMAGES, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
+        1, /* n_binding */
+        DescriptorSet::DynamicUniformBufferBindingElement(
+            m_camera_uniform_buffer_ptr.get(),
+            0, /* in_start_offset */
+            m_camera_buffer_size_per_swapchain_image));
+    m_dsg_ptr->set_binding_item(
+        4 + N_SWAPCHAIN_IMAGES, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
+        2, /* n_binding */
+        DescriptorSet::CombinedImageSamplerBindingElement(
+            ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            m_depth_image_view2_ptr.get(),
+            m_sampler.get()));
+    m_dsg_ptr->set_binding_item(
+        4 + N_SWAPCHAIN_IMAGES, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
+        3, /* n_binding */
+        DescriptorSet::CombinedImageSamplerBindingElement(
+            ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            m_tangent_frame_image_view_ptr.get(),
+            m_sampler.get()));
+    m_dsg_ptr->set_binding_item(
+        4 + N_SWAPCHAIN_IMAGES, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
+        4, /* n_binding */
+        DescriptorSet::CombinedImageSamplerBindingElement(
+            ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            m_material_id_image_view_ptr.get(),
+            m_sampler.get()));
+    #pragma endregion
+
+
     #pragma endregion
 }
 
@@ -956,61 +1061,10 @@ void Engine::init_render_pass()
 
 void Engine::init_shaders()
 {
-    GLSLShaderToSPIRVGeneratorUniquePtr vertex_shader_ptr;
-    ShaderModuleUniquePtr               vertex_shader_module_ptr;
-    GLSLShaderToSPIRVGeneratorUniquePtr fragment_shader_ptr;
-    ShaderModuleUniquePtr               fragment_shader_module_ptr;
-    GLSLShaderToSPIRVGeneratorUniquePtr compute_shader_ptr;
-    ShaderModuleUniquePtr               compute_shader_module_ptr;
-
-    vertex_shader_ptr = GLSLShaderToSPIRVGenerator::create(
-        m_device_ptr.get(),
-        GLSLShaderToSPIRVGenerator::MODE_LOAD_SOURCE_FROM_FILE,
-        "Assets/code/shader/GBuffer.vert",
-        ShaderStage::VERTEX);
-    fragment_shader_ptr = GLSLShaderToSPIRVGenerator::create(
-        m_device_ptr.get(),
-        GLSLShaderToSPIRVGenerator::MODE_LOAD_SOURCE_FROM_FILE,
-        "Assets/code/shader/GBuffer.frag",
-        ShaderStage::FRAGMENT);
-    compute_shader_ptr = GLSLShaderToSPIRVGenerator::create(
-        m_device_ptr.get(),
-        GLSLShaderToSPIRVGenerator::MODE_LOAD_SOURCE_FROM_FILE,
-        "Assets/code/shader/deferred.comp",
-        ShaderStage::COMPUTE);
-
-    vertex_shader_module_ptr = ShaderModule::create_from_spirv_generator(
-        m_device_ptr.get(),
-        vertex_shader_ptr.get());
-    fragment_shader_module_ptr = ShaderModule::create_from_spirv_generator(
-        m_device_ptr.get(),
-        fragment_shader_ptr.get());
-    compute_shader_module_ptr = ShaderModule::create_from_spirv_generator(
-        m_device_ptr.get(),
-        compute_shader_ptr.get());
-
-    vertex_shader_module_ptr->set_name("Vertex shader module");
-    fragment_shader_module_ptr->set_name("Fragment shader module");
-    compute_shader_module_ptr->set_name("Compute shader module");
-
-    m_vs_ptr.reset(
-        new ShaderModuleStageEntryPoint(
-            "main",
-            move(vertex_shader_module_ptr),
-            ShaderStage::VERTEX)
-    );
-    m_fs_ptr.reset(
-        new ShaderModuleStageEntryPoint(
-            "main",
-            move(fragment_shader_module_ptr),
-            ShaderStage::FRAGMENT)
-    );
-    m_cs_ptr.reset(
-        new ShaderModuleStageEntryPoint(
-            "main",
-            move(compute_shader_module_ptr),
-            ShaderStage::COMPUTE)
-    );
+    m_vs_ptr.reset(create_shader("Assets/code/shader/GBuffer.vert", ShaderStage::VERTEX, "Vertex"));
+    m_fs_ptr.reset(create_shader("Assets/code/shader/GBuffer.frag", ShaderStage::FRAGMENT, "Fragment"));
+    m_picking_cs_ptr.reset(create_shader("Assets/code/shader/picking.comp", ShaderStage::COMPUTE, "Picking Compute"));
+    m_deferred_cs_ptr.reset(create_shader("Assets/code/shader/deferred.comp", ShaderStage::COMPUTE, "Deferred Compute"));
 }
 
 void Engine::init_gfx_pipelines()
@@ -1076,30 +1130,55 @@ void Engine::init_gfx_pipelines()
 
 void Engine::init_compute_pipelines()
 {
-    ComputePipelineCreateInfoUniquePtr compute_pipeline_create_info_ptr;
-
-    compute_pipeline_create_info_ptr = ComputePipelineCreateInfo::create(
-        PipelineCreateFlagBits::NONE,
-        *m_cs_ptr);
-
-    vector<const DescriptorSetCreateInfo*> m_desc_create_info;
-    m_desc_create_info.push_back(m_dsg_ptr->get_descriptor_set_create_info(0));
-    m_desc_create_info.push_back(m_dsg_ptr->get_descriptor_set_create_info(2));
-    m_desc_create_info.push_back(m_dsg_ptr->get_descriptor_set_create_info(3));
-    m_desc_create_info.push_back(m_dsg_ptr->get_descriptor_set_create_info(4));
-    compute_pipeline_create_info_ptr->set_descriptor_set_create_info(&m_desc_create_info);
-    compute_pipeline_create_info_ptr->attach_push_constant_range(
-        0,
-        sizeof(m_deferred_constants),
-        ShaderStageFlagBits::COMPUTE_BIT);
-
-    int SIZE = m_model->get_material_num();
-    compute_pipeline_create_info_ptr->add_specialization_constant(0, 4, &SIZE);
-
     auto compute_pipeline_manager_ptr(m_device_ptr->get_compute_pipeline_manager());
-    compute_pipeline_manager_ptr->add_pipeline(
-        move(compute_pipeline_create_info_ptr),
-        &m_compute_pipeline_id);
+
+    //picking
+    {
+        ComputePipelineCreateInfoUniquePtr compute_pipeline_create_info_ptr;
+
+        compute_pipeline_create_info_ptr = ComputePipelineCreateInfo::create(
+            PipelineCreateFlagBits::NONE,
+            *m_picking_cs_ptr);
+
+        vector<const DescriptorSetCreateInfo*> m_desc_create_info;
+        m_desc_create_info.push_back(m_dsg_ptr->get_descriptor_set_create_info(4 + N_SWAPCHAIN_IMAGES));
+        compute_pipeline_create_info_ptr->set_descriptor_set_create_info(&m_desc_create_info);
+        compute_pipeline_create_info_ptr->attach_push_constant_range(
+            0,
+            sizeof(m_deferred_constants),
+            ShaderStageFlagBits::COMPUTE_BIT);
+
+        compute_pipeline_manager_ptr->add_pipeline(
+            move(compute_pipeline_create_info_ptr),
+            &m_picking_compute_pipeline_id);
+    }
+
+    //deferred
+    {
+        ComputePipelineCreateInfoUniquePtr compute_pipeline_create_info_ptr;
+
+        compute_pipeline_create_info_ptr = ComputePipelineCreateInfo::create(
+            PipelineCreateFlagBits::NONE,
+            *m_deferred_cs_ptr);
+
+        vector<const DescriptorSetCreateInfo*> m_desc_create_info;
+        m_desc_create_info.push_back(m_dsg_ptr->get_descriptor_set_create_info(0));
+        m_desc_create_info.push_back(m_dsg_ptr->get_descriptor_set_create_info(2));
+        m_desc_create_info.push_back(m_dsg_ptr->get_descriptor_set_create_info(3));
+        m_desc_create_info.push_back(m_dsg_ptr->get_descriptor_set_create_info(4));
+        compute_pipeline_create_info_ptr->set_descriptor_set_create_info(&m_desc_create_info);
+        compute_pipeline_create_info_ptr->attach_push_constant_range(
+            0,
+            sizeof(m_deferred_constants),
+            ShaderStageFlagBits::COMPUTE_BIT);
+
+        int SIZE = m_model->get_material_num();
+        compute_pipeline_create_info_ptr->add_specialization_constant(0, 4, &SIZE);
+
+        compute_pipeline_manager_ptr->add_pipeline(
+            move(compute_pipeline_create_info_ptr),
+            &m_deferred_compute_pipeline_id);
+    }
 }
 
 
@@ -1177,303 +1256,396 @@ void Engine::init_command_buffers()
         #pragma endregion
 
         #pragma region 确保mvp_uniform缓冲已经写入
-        BufferBarrier buffer_barrier(
-            AccessFlagBits::HOST_WRITE_BIT,                 /* in_source_access_mask      */
-            AccessFlagBits::UNIFORM_READ_BIT,               /* in_destination_access_mask */
-            universal_queue_ptr->get_queue_family_index(),         /* in_src_queue_family_index  */
-            universal_queue_ptr->get_queue_family_index(),         /* in_dst_queue_family_index  */
-            m_mvp_uniform_buffer_ptr.get(),
-            m_mvp_buffer_size_per_swapchain_image * n_command_buffer, /* in_offset                  */
-            m_mvp_buffer_size_per_swapchain_image);
+        {
+            BufferBarrier buffer_barrier(
+                AccessFlagBits::HOST_WRITE_BIT,                 /* in_source_access_mask      */
+                AccessFlagBits::UNIFORM_READ_BIT,               /* in_destination_access_mask */
+                universal_queue_ptr->get_queue_family_index(),         /* in_src_queue_family_index  */
+                universal_queue_ptr->get_queue_family_index(),         /* in_dst_queue_family_index  */
+                m_mvp_uniform_buffer_ptr.get(),
+                m_mvp_buffer_size_per_swapchain_image * n_command_buffer, /* in_offset                  */
+                m_mvp_buffer_size_per_swapchain_image);
 
-        cmd_buffer_ptr->record_pipeline_barrier(
-            PipelineStageFlagBits::HOST_BIT,
-            PipelineStageFlagBits::VERTEX_SHADER_BIT,
-            DependencyFlagBits::NONE,
-            0,               /* in_memory_barrier_count        */
-            nullptr,         /* in_memory_barriers_ptr         */
-            1,               /* in_buffer_memory_barrier_count */
-            &buffer_barrier,
-            0,               /* in_image_memory_barrier_count  */
-            nullptr);        /* in_image_memory_barriers_ptr   */
+            cmd_buffer_ptr->record_pipeline_barrier(
+                PipelineStageFlagBits::HOST_BIT,
+                PipelineStageFlagBits::VERTEX_SHADER_BIT,
+                DependencyFlagBits::NONE,
+                0,               /* in_memory_barrier_count        */
+                nullptr,         /* in_memory_barriers_ptr         */
+                1,               /* in_buffer_memory_barrier_count */
+                &buffer_barrier,
+                0,               /* in_image_memory_barrier_count  */
+                nullptr);        /* in_image_memory_barriers_ptr   */
+        }
         #pragma endregion
 
         #pragma region 改变附件图像布局用于片元着色器输出
-        vector<ImageBarrier> image_barriers;
-        image_barriers.push_back(
-            ImageBarrier(
-                AccessFlagBits::SHADER_READ_BIT,                    /* source_access_mask       */
-                AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT,         /* destination_access_mask  */
-                ImageLayout::SHADER_READ_ONLY_OPTIMAL,              /* old_image_layout */
-                ImageLayout::COLOR_ATTACHMENT_OPTIMAL,              /* new_image_layout */
-                universal_queue_ptr->get_queue_family_index(),
-                universal_queue_ptr->get_queue_family_index(),
-                m_depth_image2_ptr.get(),
-                image_subresource_range));
+        {
+            vector<ImageBarrier> image_barriers;
+            image_barriers.push_back(
+                ImageBarrier(
+                    AccessFlagBits::SHADER_READ_BIT,                    /* source_access_mask       */
+                    AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT,         /* destination_access_mask  */
+                    ImageLayout::SHADER_READ_ONLY_OPTIMAL,              /* old_image_layout */
+                    ImageLayout::COLOR_ATTACHMENT_OPTIMAL,              /* new_image_layout */
+                    universal_queue_ptr->get_queue_family_index(),
+                    universal_queue_ptr->get_queue_family_index(),
+                    m_depth_image2_ptr.get(),
+                    image_subresource_range));
 
-        image_barriers.push_back(
-            ImageBarrier(
-                AccessFlagBits::SHADER_READ_BIT,                    /* source_access_mask       */
-                AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT,         /* destination_access_mask  */
-                ImageLayout::SHADER_READ_ONLY_OPTIMAL,              /* old_image_layout */
-                ImageLayout::COLOR_ATTACHMENT_OPTIMAL,              /* new_image_layout */
-                universal_queue_ptr->get_queue_family_index(),
-                universal_queue_ptr->get_queue_family_index(),
-                m_tangent_frame_image_ptr.get(),
-                image_subresource_range));
+            image_barriers.push_back(
+                ImageBarrier(
+                    AccessFlagBits::SHADER_READ_BIT,                    /* source_access_mask       */
+                    AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT,         /* destination_access_mask  */
+                    ImageLayout::SHADER_READ_ONLY_OPTIMAL,              /* old_image_layout */
+                    ImageLayout::COLOR_ATTACHMENT_OPTIMAL,              /* new_image_layout */
+                    universal_queue_ptr->get_queue_family_index(),
+                    universal_queue_ptr->get_queue_family_index(),
+                    m_tangent_frame_image_ptr.get(),
+                    image_subresource_range));
 
-        image_barriers.push_back(
-            ImageBarrier(
-                AccessFlagBits::SHADER_READ_BIT,                    /* source_access_mask       */
-                AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT,         /* destination_access_mask  */
-                ImageLayout::SHADER_READ_ONLY_OPTIMAL,              /* old_image_layout */
-                ImageLayout::COLOR_ATTACHMENT_OPTIMAL,              /* new_image_layout */
-                universal_queue_ptr->get_queue_family_index(),
-                universal_queue_ptr->get_queue_family_index(),
-                m_uv_and_depth_gradient_image_ptr.get(),
-                image_subresource_range));
+            image_barriers.push_back(
+                ImageBarrier(
+                    AccessFlagBits::SHADER_READ_BIT,                    /* source_access_mask       */
+                    AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT,         /* destination_access_mask  */
+                    ImageLayout::SHADER_READ_ONLY_OPTIMAL,              /* old_image_layout */
+                    ImageLayout::COLOR_ATTACHMENT_OPTIMAL,              /* new_image_layout */
+                    universal_queue_ptr->get_queue_family_index(),
+                    universal_queue_ptr->get_queue_family_index(),
+                    m_uv_and_depth_gradient_image_ptr.get(),
+                    image_subresource_range));
 
-        image_barriers.push_back(
-            ImageBarrier(
-                AccessFlagBits::SHADER_READ_BIT,                    /* source_access_mask       */
-                AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT,         /* destination_access_mask  */
-                ImageLayout::SHADER_READ_ONLY_OPTIMAL,              /* old_image_layout */
-                ImageLayout::COLOR_ATTACHMENT_OPTIMAL,              /* new_image_layout */
-                universal_queue_ptr->get_queue_family_index(),
-                universal_queue_ptr->get_queue_family_index(),
-                m_uv_gradient_image_ptr.get(),
-                image_subresource_range));
+            image_barriers.push_back(
+                ImageBarrier(
+                    AccessFlagBits::SHADER_READ_BIT,                    /* source_access_mask       */
+                    AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT,         /* destination_access_mask  */
+                    ImageLayout::SHADER_READ_ONLY_OPTIMAL,              /* old_image_layout */
+                    ImageLayout::COLOR_ATTACHMENT_OPTIMAL,              /* new_image_layout */
+                    universal_queue_ptr->get_queue_family_index(),
+                    universal_queue_ptr->get_queue_family_index(),
+                    m_uv_gradient_image_ptr.get(),
+                    image_subresource_range));
 
-        image_barriers.push_back(
-            ImageBarrier(
-                AccessFlagBits::SHADER_READ_BIT,                    /* source_access_mask       */
-                AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT,         /* destination_access_mask  */
-                ImageLayout::SHADER_READ_ONLY_OPTIMAL,              /* old_image_layout */
-                ImageLayout::COLOR_ATTACHMENT_OPTIMAL,              /* new_image_layout */
-                universal_queue_ptr->get_queue_family_index(),
-                universal_queue_ptr->get_queue_family_index(),
-                m_material_id_image_ptr.get(),
-                image_subresource_range));
+            image_barriers.push_back(
+                ImageBarrier(
+                    AccessFlagBits::SHADER_READ_BIT,                    /* source_access_mask       */
+                    AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT,         /* destination_access_mask  */
+                    ImageLayout::SHADER_READ_ONLY_OPTIMAL,              /* old_image_layout */
+                    ImageLayout::COLOR_ATTACHMENT_OPTIMAL,              /* new_image_layout */
+                    universal_queue_ptr->get_queue_family_index(),
+                    universal_queue_ptr->get_queue_family_index(),
+                    m_material_id_image_ptr.get(),
+                    image_subresource_range));
 
-        cmd_buffer_ptr->record_pipeline_barrier(
-            PipelineStageFlagBits::COMPUTE_SHADER_BIT,                /* src_stage_mask                 */
-            PipelineStageFlagBits::COLOR_ATTACHMENT_OUTPUT_BIT,       /* dst_stage_mask                 */
-            DependencyFlagBits::NONE,
-            0,                                                        /* in_memory_barrier_count        */
-            nullptr,                                                  /* in_memory_barrier_ptrs         */
-            0,                                                        /* in_buffer_memory_barrier_count */
-            nullptr,                                                  /* in_buffer_memory_barrier_ptrs  */
-            image_barriers.size(),                                   /* in_image_memory_barrier_count  */
-            image_barriers.data());
+            cmd_buffer_ptr->record_pipeline_barrier(
+                PipelineStageFlagBits::COMPUTE_SHADER_BIT,                /* src_stage_mask                 */
+                PipelineStageFlagBits::COLOR_ATTACHMENT_OUTPUT_BIT,       /* dst_stage_mask                 */
+                DependencyFlagBits::NONE,
+                0,                                                        /* in_memory_barrier_count        */
+                nullptr,                                                  /* in_memory_barrier_ptrs         */
+                0,                                                        /* in_buffer_memory_barrier_count */
+                nullptr,                                                  /* in_buffer_memory_barrier_ptrs  */
+                image_barriers.size(),                                   /* in_image_memory_barrier_count  */
+                image_barriers.data());
+        }
         #pragma endregion
 
         #pragma region 渲染GBuffer
-        array<VkClearValue, 6>            attachment_clear_value;
-        VkRect2D                          render_area;
-        VkShaderStageFlags                shaderStageFlags = 0;
+        {
+            array<VkClearValue, 6>            attachment_clear_value;
+            VkRect2D                          render_area;
+            VkShaderStageFlags                shaderStageFlags = 0;
 
-        attachment_clear_value[0].color = { 1.0f, 0.0f, 0.0f, 0.0f };
-        attachment_clear_value[1].color = { 0.0f, 0.0f, 0.0f, 0.0f };
-        attachment_clear_value[2].color = { 0.0f, 0.0f, 0.0f, 0.0f };
-        attachment_clear_value[3].color = { 0.0f, 0.0f, 0.0f, 0.0f };
-        attachment_clear_value[4].color = { uint32(255), uint32(0), uint32(0), uint32(0) };
-        attachment_clear_value[5].depthStencil = { 1.0f, 0 };
+            attachment_clear_value[0].color = { 1.0f, 0.0f, 0.0f, 0.0f };
+            attachment_clear_value[1].color = { 0.0f, 0.0f, 0.0f, 0.0f };
+            attachment_clear_value[2].color = { 0.0f, 0.0f, 0.0f, 0.0f };
+            attachment_clear_value[3].color = { 0.0f, 0.0f, 0.0f, 0.0f };
+            attachment_clear_value[4].color = { uint32(255), uint32(0), uint32(0), uint32(0) };
+            attachment_clear_value[5].depthStencil = { 1.0f, 0 };
 
-        render_area.extent.height = m_height;
-        render_area.extent.width = m_width;
-        render_area.offset.x = 0;
-        render_area.offset.y = 0;
+            render_area.extent.height = m_height;
+            render_area.extent.width = m_width;
+            render_area.offset.x = 0;
+            render_area.offset.y = 0;
 
-        cmd_buffer_ptr->record_begin_render_pass(
-            6, /* in_n_clear_values */
-            attachment_clear_value.data(),
-            m_fbo.get(),
-            render_area,
-            m_renderpass_ptr.get(),
-            SubpassContents::INLINE);
+            cmd_buffer_ptr->record_begin_render_pass(
+                6, /* in_n_clear_values */
+                attachment_clear_value.data(),
+                m_fbo.get(),
+                render_area,
+                m_renderpass_ptr.get(),
+                SubpassContents::INLINE);
         
-        const uint32_t data_ub_offset = static_cast<uint32_t>(m_mvp_buffer_size_per_swapchain_image * n_command_buffer);
-        DescriptorSet* ds_ptr[1] = { m_dsg_ptr->get_descriptor_set(1) };
+            const uint32_t data_ub_offset = static_cast<uint32_t>(m_mvp_buffer_size_per_swapchain_image * n_command_buffer);
+            DescriptorSet* ds_ptr[1] = { m_dsg_ptr->get_descriptor_set(1) };
 
-        cmd_buffer_ptr->record_bind_pipeline(
-            PipelineBindPoint::GRAPHICS,
-            m_gfx_pipeline_id);
+            cmd_buffer_ptr->record_bind_pipeline(
+                PipelineBindPoint::GRAPHICS,
+                m_gfx_pipeline_id);
 
-        cmd_buffer_ptr->record_bind_descriptor_sets(
-            PipelineBindPoint::GRAPHICS,
-            Engine::Instance()->getPineLine(),
-            0, /* firstSet */
-            1, /* setCount：传入的描述符集与shader中的set一一对应 */
-            ds_ptr,
-            1,                /* dynamicOffsetCount */
-            &data_ub_offset); /* pDynamicOffsets    */
+            cmd_buffer_ptr->record_bind_descriptor_sets(
+                PipelineBindPoint::GRAPHICS,
+                getPineLine(),
+                0, /* firstSet */
+                1, /* setCount：传入的描述符集与shader中的set一一对应 */
+                ds_ptr,
+                1,                /* dynamicOffsetCount */
+                &data_ub_offset); /* pDynamicOffsets    */
 
-        m_model->draw(cmd_buffer_ptr.get());
-        cmd_buffer_ptr->record_end_render_pass();
+            m_model->draw(cmd_buffer_ptr.get());
+            cmd_buffer_ptr->record_end_render_pass();
+        }
+
+        #pragma endregion
+
+        #pragma region 确保sunlight_uniform和camera_uniform缓冲已经写入
+        {
+            BufferBarrier buffer_barrier1(
+                AccessFlagBits::HOST_WRITE_BIT,                 /* in_source_access_mask      */
+                AccessFlagBits::UNIFORM_READ_BIT,               /* in_destination_access_mask */
+                universal_queue_ptr->get_queue_family_index(),         /* in_src_queue_family_index  */
+                universal_queue_ptr->get_queue_family_index(),         /* in_dst_queue_family_index  */
+                m_sunLight_uniform_buffer_ptr.get(),
+                m_sunLight_buffer_size_per_swapchain_image * n_command_buffer, /* in_offset                  */
+                m_sunLight_buffer_size_per_swapchain_image);
+
+            BufferBarrier buffer_barrier2(
+                AccessFlagBits::HOST_WRITE_BIT,                 /* in_source_access_mask      */
+                AccessFlagBits::UNIFORM_READ_BIT,               /* in_destination_access_mask */
+                universal_queue_ptr->get_queue_family_index(),         /* in_src_queue_family_index  */
+                universal_queue_ptr->get_queue_family_index(),         /* in_dst_queue_family_index  */
+                m_camera_uniform_buffer_ptr.get(),
+                m_camera_buffer_size_per_swapchain_image * n_command_buffer, /* in_offset                  */
+                m_camera_buffer_size_per_swapchain_image);
+        
+            BufferBarrier buffer_barriers[2] = { buffer_barrier1 , buffer_barrier2 };
+            cmd_buffer_ptr->record_pipeline_barrier(
+                PipelineStageFlagBits::HOST_BIT,
+                PipelineStageFlagBits::COMPUTE_SHADER_BIT,
+                DependencyFlagBits::NONE,
+                0,               /* in_memory_barrier_count        */
+                nullptr,         /* in_memory_barriers_ptr         */
+                2,               /* in_buffer_memory_barrier_count */
+                buffer_barriers,
+                0,               /* in_image_memory_barrier_count  */
+                nullptr);        /* in_image_memory_barriers_ptr   */
+        }
         #pragma endregion
 
         #pragma region 改变附件图像布局用于计算着色器读取
-        vector<ImageBarrier> image_barriers2;
-        image_barriers2.push_back(
-            ImageBarrier(
-                AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT, /* source_access_mask       */
-                AccessFlagBits::SHADER_READ_BIT,           /* destination_access_mask  */
-                ImageLayout::COLOR_ATTACHMENT_OPTIMAL,      /* old_image_layout */
-                ImageLayout::SHADER_READ_ONLY_OPTIMAL,      /* new_image_layout */
-                universal_queue_ptr->get_queue_family_index(),
-                universal_queue_ptr->get_queue_family_index(),
-                m_depth_image2_ptr.get(),
-                image_subresource_range));
+        {
+            vector<ImageBarrier> image_barriers;
+            image_barriers.push_back(
+                ImageBarrier(
+                    AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT, /* source_access_mask       */
+                    AccessFlagBits::SHADER_READ_BIT,           /* destination_access_mask  */
+                    ImageLayout::COLOR_ATTACHMENT_OPTIMAL,      /* old_image_layout */
+                    ImageLayout::SHADER_READ_ONLY_OPTIMAL,      /* new_image_layout */
+                    universal_queue_ptr->get_queue_family_index(),
+                    universal_queue_ptr->get_queue_family_index(),
+                    m_depth_image2_ptr.get(),
+                    image_subresource_range));
 
-        image_barriers2.push_back(
-            ImageBarrier(
-                AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT, /* source_access_mask       */
-                AccessFlagBits::SHADER_READ_BIT,           /* destination_access_mask  */
-                ImageLayout::COLOR_ATTACHMENT_OPTIMAL,      /* old_image_layout */
-                ImageLayout::SHADER_READ_ONLY_OPTIMAL,      /* new_image_layout */
-                universal_queue_ptr->get_queue_family_index(),
-                universal_queue_ptr->get_queue_family_index(),
-                m_tangent_frame_image_ptr.get(),
-                image_subresource_range));
+            image_barriers.push_back(
+                ImageBarrier(
+                    AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT, /* source_access_mask       */
+                    AccessFlagBits::SHADER_READ_BIT,           /* destination_access_mask  */
+                    ImageLayout::COLOR_ATTACHMENT_OPTIMAL,      /* old_image_layout */
+                    ImageLayout::SHADER_READ_ONLY_OPTIMAL,      /* new_image_layout */
+                    universal_queue_ptr->get_queue_family_index(),
+                    universal_queue_ptr->get_queue_family_index(),
+                    m_tangent_frame_image_ptr.get(),
+                    image_subresource_range));
 
-        image_barriers2.push_back(
-            ImageBarrier(
-                AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT, /* source_access_mask       */
-                AccessFlagBits::SHADER_READ_BIT,           /* destination_access_mask  */
-                ImageLayout::COLOR_ATTACHMENT_OPTIMAL,      /* old_image_layout */
-                ImageLayout::SHADER_READ_ONLY_OPTIMAL,      /* new_image_layout */
-                universal_queue_ptr->get_queue_family_index(),
-                universal_queue_ptr->get_queue_family_index(),
-                m_uv_and_depth_gradient_image_ptr.get(),
-                image_subresource_range));
+            image_barriers.push_back(
+                ImageBarrier(
+                    AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT, /* source_access_mask       */
+                    AccessFlagBits::SHADER_READ_BIT,           /* destination_access_mask  */
+                    ImageLayout::COLOR_ATTACHMENT_OPTIMAL,      /* old_image_layout */
+                    ImageLayout::SHADER_READ_ONLY_OPTIMAL,      /* new_image_layout */
+                    universal_queue_ptr->get_queue_family_index(),
+                    universal_queue_ptr->get_queue_family_index(),
+                    m_uv_and_depth_gradient_image_ptr.get(),
+                    image_subresource_range));
 
-        image_barriers2.push_back(
-            ImageBarrier(
-                AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT, /* source_access_mask       */
-                AccessFlagBits::SHADER_READ_BIT,           /* destination_access_mask  */
-                ImageLayout::COLOR_ATTACHMENT_OPTIMAL,      /* old_image_layout */
-                ImageLayout::SHADER_READ_ONLY_OPTIMAL,      /* new_image_layout */
-                universal_queue_ptr->get_queue_family_index(),
-                universal_queue_ptr->get_queue_family_index(),
-                m_uv_gradient_image_ptr.get(),
-                image_subresource_range));
+            image_barriers.push_back(
+                ImageBarrier(
+                    AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT, /* source_access_mask       */
+                    AccessFlagBits::SHADER_READ_BIT,           /* destination_access_mask  */
+                    ImageLayout::COLOR_ATTACHMENT_OPTIMAL,      /* old_image_layout */
+                    ImageLayout::SHADER_READ_ONLY_OPTIMAL,      /* new_image_layout */
+                    universal_queue_ptr->get_queue_family_index(),
+                    universal_queue_ptr->get_queue_family_index(),
+                    m_uv_gradient_image_ptr.get(),
+                    image_subresource_range));
 
-        image_barriers2.push_back(
-            ImageBarrier(
-                AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT, /* source_access_mask       */
-                AccessFlagBits::SHADER_READ_BIT,           /* destination_access_mask  */
-                ImageLayout::COLOR_ATTACHMENT_OPTIMAL,      /* old_image_layout */
-                ImageLayout::SHADER_READ_ONLY_OPTIMAL,      /* new_image_layout */
-                universal_queue_ptr->get_queue_family_index(),
-                universal_queue_ptr->get_queue_family_index(),
-                m_material_id_image_ptr.get(),
-                image_subresource_range));
+            image_barriers.push_back(
+                ImageBarrier(
+                    AccessFlagBits::COLOR_ATTACHMENT_WRITE_BIT, /* source_access_mask       */
+                    AccessFlagBits::SHADER_READ_BIT,           /* destination_access_mask  */
+                    ImageLayout::COLOR_ATTACHMENT_OPTIMAL,      /* old_image_layout */
+                    ImageLayout::SHADER_READ_ONLY_OPTIMAL,      /* new_image_layout */
+                    universal_queue_ptr->get_queue_family_index(),
+                    universal_queue_ptr->get_queue_family_index(),
+                    m_material_id_image_ptr.get(),
+                    image_subresource_range));
 
-        cmd_buffer_ptr->record_pipeline_barrier(
-            PipelineStageFlagBits::COLOR_ATTACHMENT_OUTPUT_BIT,       /* src_stage_mask                 */
-            PipelineStageFlagBits::COMPUTE_SHADER_BIT,                /* dst_stage_mask                 */
-            DependencyFlagBits::NONE,
-            0,                                                        /* in_memory_barrier_count        */
-            nullptr,                                                  /* in_memory_barrier_ptrs         */
-            0,                                                        /* in_buffer_memory_barrier_count */
-            nullptr,                                                  /* in_buffer_memory_barrier_ptrs  */
-            image_barriers2.size(),                                  /* in_image_memory_barrier_count  */
-            image_barriers2.data());
-        #pragma endregion
-        
-        #pragma region 确保sunlight_uniform和camera_uniform缓冲已经写入
-        BufferBarrier buffer_barrier1(
-            AccessFlagBits::HOST_WRITE_BIT,                 /* in_source_access_mask      */
-            AccessFlagBits::UNIFORM_READ_BIT,               /* in_destination_access_mask */
-            universal_queue_ptr->get_queue_family_index(),         /* in_src_queue_family_index  */
-            universal_queue_ptr->get_queue_family_index(),         /* in_dst_queue_family_index  */
-            m_sunLight_uniform_buffer_ptr.get(),
-            m_sunLight_buffer_size_per_swapchain_image * n_command_buffer, /* in_offset                  */
-            m_sunLight_buffer_size_per_swapchain_image);
-
-        BufferBarrier buffer_barrier2(
-            AccessFlagBits::HOST_WRITE_BIT,                 /* in_source_access_mask      */
-            AccessFlagBits::UNIFORM_READ_BIT,               /* in_destination_access_mask */
-            universal_queue_ptr->get_queue_family_index(),         /* in_src_queue_family_index  */
-            universal_queue_ptr->get_queue_family_index(),         /* in_dst_queue_family_index  */
-            m_sunLight_uniform_buffer_ptr.get(),
-            m_sunLight_buffer_size_per_swapchain_image* n_command_buffer, /* in_offset                  */
-            m_sunLight_buffer_size_per_swapchain_image);
-        
-        BufferBarrier buffer_barriers[2] = { buffer_barrier1 , buffer_barrier2 };
-        cmd_buffer_ptr->record_pipeline_barrier(
-            PipelineStageFlagBits::HOST_BIT,
-            PipelineStageFlagBits::COMPUTE_SHADER_BIT,
-            DependencyFlagBits::NONE,
-            0,               /* in_memory_barrier_count        */
-            nullptr,         /* in_memory_barriers_ptr         */
-            2,               /* in_buffer_memory_barrier_count */
-            buffer_barriers,
-            0,               /* in_image_memory_barrier_count  */
-            nullptr);        /* in_image_memory_barriers_ptr   */
+            cmd_buffer_ptr->record_pipeline_barrier(
+                PipelineStageFlagBits::COLOR_ATTACHMENT_OUTPUT_BIT,       /* src_stage_mask                 */
+                PipelineStageFlagBits::COMPUTE_SHADER_BIT,                /* dst_stage_mask                 */
+                DependencyFlagBits::NONE,
+                0,                                                        /* in_memory_barrier_count        */
+                nullptr,                                                  /* in_memory_barrier_ptrs         */
+                0,                                                        /* in_buffer_memory_barrier_count */
+                nullptr,                                                  /* in_buffer_memory_barrier_ptrs  */
+                image_barriers.size(),                                  /* in_image_memory_barrier_count  */
+                image_barriers.data());
+        }
         #pragma endregion
 
         #pragma region 改变交换链图像布局用于计算着色器写入
-        ImageBarrier write_image_barrier(
-            AccessFlagBits::NONE,                       /* source_access_mask       */
-            AccessFlagBits::SHADER_WRITE_BIT,           /* destination_access_mask  */
-            ImageLayout::UNDEFINED,                     /* old_image_layout */
-            ImageLayout::GENERAL,                       /* new_image_layout */
-            universal_queue_ptr->get_queue_family_index(),
-            universal_queue_ptr->get_queue_family_index(),
-            m_swapchain_ptr->get_image(n_command_buffer),
-            image_subresource_range);
+        {
+            ImageBarrier image_barrier(
+                AccessFlagBits::NONE,                       /* source_access_mask       */
+                AccessFlagBits::SHADER_WRITE_BIT,           /* destination_access_mask  */
+                ImageLayout::UNDEFINED,                     /* old_image_layout */
+                ImageLayout::GENERAL,                       /* new_image_layout */
+                universal_queue_ptr->get_queue_family_index(),
+                universal_queue_ptr->get_queue_family_index(),
+                m_swapchain_ptr->get_image(n_command_buffer),
+                image_subresource_range);
 
-        cmd_buffer_ptr->record_pipeline_barrier(
-            PipelineStageFlagBits::ALL_COMMANDS_BIT,       /* src_stage_mask                 */
-            PipelineStageFlagBits::COMPUTE_SHADER_BIT,                /* dst_stage_mask                 */
-            DependencyFlagBits::NONE,
-            0,                                                        /* in_memory_barrier_count        */
-            nullptr,                                                  /* in_memory_barrier_ptrs         */
-            0,                                                        /* in_buffer_memory_barrier_count */
-            nullptr,                                                  /* in_buffer_memory_barrier_ptrs  */
-            1,                                                        /* in_image_memory_barrier_count  */
-            &write_image_barrier);
+            cmd_buffer_ptr->record_pipeline_barrier(
+                PipelineStageFlagBits::ALL_COMMANDS_BIT,       /* src_stage_mask                 */
+                PipelineStageFlagBits::COMPUTE_SHADER_BIT,                /* dst_stage_mask                 */
+                DependencyFlagBits::NONE,
+                0,                                                        /* in_memory_barrier_count        */
+                nullptr,                                                  /* in_memory_barrier_ptrs         */
+                0,                                                        /* in_buffer_memory_barrier_count */
+                nullptr,                                                  /* in_buffer_memory_barrier_ptrs  */
+                1,                                                        /* in_image_memory_barrier_count  */
+                &image_barrier);
+        }
+        #pragma endregion
+
+        #pragma region 确保picking_storage缓冲可以写入
+        {
+            BufferBarrier buffer_barrier(
+                AccessFlagBits::SHADER_READ_BIT,                      /* in_source_access_mask      */
+                AccessFlagBits::SHADER_WRITE_BIT,                       /* in_destination_access_mask */
+                universal_queue_ptr->get_queue_family_index(),         /* in_src_queue_family_index  */
+                universal_queue_ptr->get_queue_family_index(),         /* in_dst_queue_family_index  */
+                m_picking_storage_buffer_ptr.get(),
+                0,                                                     /* in_offset                  */
+                m_picking_buffer_size);
+
+            cmd_buffer_ptr->record_pipeline_barrier(
+                PipelineStageFlagBits::COMPUTE_SHADER_BIT,
+                PipelineStageFlagBits::COMPUTE_SHADER_BIT,
+                DependencyFlagBits::NONE,
+                0,               /* in_memory_barrier_count        */
+                nullptr,         /* in_memory_barriers_ptr         */
+                1,               /* in_buffer_memory_barrier_count */
+                &buffer_barrier,
+                0,               /* in_image_memory_barrier_count  */
+                nullptr);        /* in_image_memory_barriers_ptr   */
+        }
+        #pragma endregion
+
+        #pragma region 获取屏幕中间像素的位置和法线信息
+        {
+            const uint32_t data_ub_offset[] = { static_cast<uint32_t>(m_camera_buffer_size_per_swapchain_image * n_command_buffer) };
+
+            cmd_buffer_ptr->record_bind_pipeline(
+                PipelineBindPoint::COMPUTE,
+                m_picking_compute_pipeline_id);
+
+            DescriptorSet* ds_ptr[1] = { m_dsg_ptr->get_descriptor_set(4 + N_SWAPCHAIN_IMAGES) };
+
+            cmd_buffer_ptr->record_bind_descriptor_sets(
+                PipelineBindPoint::COMPUTE,
+                getPineLine(1),
+                0, /* firstSet */
+                1, /* setCount：传入的描述符集与shader中的set一一对应 */
+                ds_ptr,
+                1,                /* dynamicOffsetCount */
+                data_ub_offset); /* pDynamicOffsets    */
+
+            m_deferred_constants.RTSize.x = m_width;
+            m_deferred_constants.RTSize.y = m_height;
+            cmd_buffer_ptr->record_push_constants(
+                getPineLine(1),
+                ShaderStageFlagBits::COMPUTE_BIT,
+                0, /* in_offset */
+                sizeof(DeferredConstants),
+                &m_deferred_constants);
+
+            cmd_buffer_ptr->record_dispatch(1, 1, 1);
+        }
+        #pragma endregion
+
+        #pragma region 确保picking_storage缓冲已经写入
+        {
+            BufferBarrier buffer_barrier(
+                AccessFlagBits::SHADER_WRITE_BIT,                      /* in_source_access_mask      */
+                AccessFlagBits::SHADER_READ_BIT,                       /* in_destination_access_mask */
+                universal_queue_ptr->get_queue_family_index(),         /* in_src_queue_family_index  */
+                universal_queue_ptr->get_queue_family_index(),         /* in_dst_queue_family_index  */
+                m_picking_storage_buffer_ptr.get(),
+                0,                                                     /* in_offset                  */
+                m_picking_buffer_size);
+
+            cmd_buffer_ptr->record_pipeline_barrier(
+                PipelineStageFlagBits::COMPUTE_SHADER_BIT,
+                PipelineStageFlagBits::COMPUTE_SHADER_BIT,
+                DependencyFlagBits::NONE,
+                0,               /* in_memory_barrier_count        */
+                nullptr,         /* in_memory_barriers_ptr         */
+                1,               /* in_buffer_memory_barrier_count */
+                &buffer_barrier,
+                0,               /* in_image_memory_barrier_count  */
+                nullptr);        /* in_image_memory_barriers_ptr   */
+        }
         #pragma endregion
 
         #pragma region 延迟纹理采样和光照
-        const uint32_t data_ub_offset2[] = {
-            static_cast<uint32_t>(m_sunLight_buffer_size_per_swapchain_image * n_command_buffer),
-            static_cast<uint32_t>(m_camera_buffer_size_per_swapchain_image * n_command_buffer)
-        };
+        {
+            const uint32_t data_ub_offset[] = {
+                static_cast<uint32_t>(m_sunLight_buffer_size_per_swapchain_image * n_command_buffer),
+                static_cast<uint32_t>(m_camera_buffer_size_per_swapchain_image * n_command_buffer)
+            };
 
-        cmd_buffer_ptr->record_bind_pipeline(
-            PipelineBindPoint::COMPUTE,
-            m_compute_pipeline_id);
+            cmd_buffer_ptr->record_bind_pipeline(
+                PipelineBindPoint::COMPUTE,
+                m_deferred_compute_pipeline_id);
 
-        DescriptorSet* ds2_ptr[4] = {
-            m_dsg_ptr->get_descriptor_set(0),
-            m_dsg_ptr->get_descriptor_set(2),
-            m_dsg_ptr->get_descriptor_set(3),
-            m_dsg_ptr->get_descriptor_set(4 + n_command_buffer) };
+            DescriptorSet* ds_ptr[4] = {
+                m_dsg_ptr->get_descriptor_set(0),
+                m_dsg_ptr->get_descriptor_set(2),
+                m_dsg_ptr->get_descriptor_set(3),
+                m_dsg_ptr->get_descriptor_set(4 + n_command_buffer) };
 
-        cmd_buffer_ptr->record_bind_descriptor_sets(
-            PipelineBindPoint::COMPUTE,
-            Engine::Instance()->getPineLine(false),
-            0, /* firstSet */
-            4, /* setCount：传入的描述符集与shader中的set一一对应 */
-            ds2_ptr,
-            2,                /* dynamicOffsetCount */
-            data_ub_offset2); /* pDynamicOffsets    */
+            cmd_buffer_ptr->record_bind_descriptor_sets(
+                PipelineBindPoint::COMPUTE,
+                Engine::Instance()->getPineLine(2),
+                0, /* firstSet */
+                4, /* setCount：传入的描述符集与shader中的set一一对应 */
+                ds_ptr,
+                2,                /* dynamicOffsetCount */
+                data_ub_offset); /* pDynamicOffsets    */
 
-        m_deferred_constants.RTSize.x = m_width;
-        m_deferred_constants.RTSize.y = m_height;
-        cmd_buffer_ptr->record_push_constants(
-            Engine::Instance()->getPineLine(false),
-            ShaderStageFlagBits::COMPUTE_BIT,
-            0, /* in_offset */
-            sizeof(DeferredConstants),
-            &m_deferred_constants);
+            cmd_buffer_ptr->record_push_constants(
+                Engine::Instance()->getPineLine(2),
+                ShaderStageFlagBits::COMPUTE_BIT,
+                0, /* in_offset */
+                sizeof(DeferredConstants),
+                &m_deferred_constants);
 
-        cmd_buffer_ptr->record_dispatch(
-            (m_width + 7) / 8,
-            (m_height + 7) / 8,
-            1);
+            cmd_buffer_ptr->record_dispatch(
+                (m_width + 7) / 8,
+                (m_height + 7) / 8,
+                1);
+        }
         #pragma endregion
 
         #pragma region 改变交换链图像布局用于呈现
@@ -1707,8 +1879,7 @@ void Engine::update_data(uint32_t in_n_swapchain_image)
         m_camera->ProcessKeyboard(RIGHT, time);
 
     MVPUniform mvp;
-    mvp.model = rotate(mat4(1.0f), /*time * */radians(30.0f), vec3(0.0f, 1.0f, 0.0f))
-        *scale(mat4(1.0f), vec3(0.015f, 0.015f, 0.015f));
+    mvp.model = scale(mat4(1.0f), vec3(0.01f, 0.01f, 0.01f));
     mvp.view = m_camera->GetViewMatrix();
     mvp.proj = m_camera->GetProjMatrix();
 
@@ -1822,11 +1993,11 @@ void Engine::cleanup_swapwhain()
         m_gfx_pipeline_id = UINT32_MAX;
     }
 
-    if (m_compute_pipeline_id != UINT32_MAX)
+    if (m_deferred_compute_pipeline_id != UINT32_MAX)
     {
         auto compute_pipeline_manager_ptr(m_device_ptr->get_compute_pipeline_manager());
-        compute_pipeline_manager_ptr->delete_pipeline(m_compute_pipeline_id);
-        m_compute_pipeline_id = UINT32_MAX;
+        compute_pipeline_manager_ptr->delete_pipeline(m_deferred_compute_pipeline_id);
+        m_deferred_compute_pipeline_id = UINT32_MAX;
     }
     
     m_renderpass_ptr.reset();
@@ -1850,6 +2021,7 @@ void Engine::deinit()
     m_mvp_uniform_buffer_ptr.reset();
     m_sunLight_uniform_buffer_ptr.reset();
     m_camera_uniform_buffer_ptr.reset();
+    m_picking_storage_buffer_ptr.reset();
     m_fs_ptr.reset();
     m_vs_ptr.reset();
 
@@ -1863,6 +2035,29 @@ void Engine::deinit()
 #pragma endregion
 
 #pragma region 工具
+ShaderModuleStageEntryPoint* Engine::create_shader(string file, ShaderStage type, string name)
+{
+    GLSLShaderToSPIRVGeneratorUniquePtr shader_ptr;
+    ShaderModuleUniquePtr               shader_module_ptr;
+
+    shader_ptr = GLSLShaderToSPIRVGenerator::create(
+        m_device_ptr.get(),
+        GLSLShaderToSPIRVGenerator::MODE_LOAD_SOURCE_FROM_FILE,
+        file,
+        type);
+
+    shader_module_ptr = ShaderModule::create_from_spirv_generator(
+        m_device_ptr.get(),
+        shader_ptr.get());
+
+    shader_module_ptr->set_name(name + "shader module");
+
+   return new ShaderModuleStageEntryPoint(
+        "main",
+        move(shader_module_ptr),
+        type);
+}
+
 void Engine::on_validation_callback(DebugMessageSeverityFlags in_severity, const char* in_message_ptr)
 {
     if ((in_severity & Anvil::DebugMessageSeverityFlagBits::ERROR_BIT) != 0)

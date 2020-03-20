@@ -2,6 +2,8 @@
 #include "stdafx.h"
 #include "mesh.h"
 #include "texture.h"
+#define N_DECALS (8)
+
 
 class Model
 {

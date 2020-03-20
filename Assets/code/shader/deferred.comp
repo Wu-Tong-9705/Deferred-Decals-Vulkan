@@ -39,6 +39,12 @@ layout(set = 1, binding = 1) uniform Camera
 	mat4 InvViewProj;
 }camera;
 
+layout(set = 1, binding = 2) buffer Picking
+{
+	vec3 Position;
+	vec3 Normal;
+}picking;
+
 layout(set = 2, binding = 0) uniform sampler2D depthMap;
 layout(set = 2, binding = 1) uniform sampler2D tangentFrameMap;
 layout(set = 2, binding = 2) uniform sampler2D UVandDepthGradientMap;
@@ -180,7 +186,6 @@ void main()
 		vec2 screenUV = (pixelPos + 0.5f) * invRTSize;
 		float depth = texelFetch(depthMap, pixelPos, 0).x;
 		vec4 positionCS = vec4(screenUV * 2.0f - 1.0f, depth, 1.0f);
-		positionCS.y *= -1.0f;
 		vec4 positionWS_ = camera.InvViewProj * positionCS;
 		vec3 positionWS = positionWS_.xyz / positionWS_.w;
 
@@ -200,11 +205,36 @@ void main()
 		vec3 diffuseAlbedo = mix(albedo.xyz, vec3(0.0f, 0.0f, 0.0f), metallic);
 		vec3 specularAlbedo = mix(vec3(0.03f, 0.03f, 0.03f), albedo.xyz, metallic);
 
+		vec3 forward = - picking.Normal;
+		vec3 up = abs(dot(forward, vec3(0.0f, 1.0f, 0.0f))) < 0.99f ? vec3(0.0f, 1.0f, 0.0f) : vec3(0.0f, 0.0f, 1.0f);
+		vec3 right = normalize(cross(up, forward));
+		up = cross(forward, right);
+		mat3 orientation = mat3(right, up, forward);
+
+		vec3 localPos = positionWS - picking.Position;
+		localPos = transpose(orientation) * localPos;
+		vec3 DecalSize = vec3(820.0f / 1024.0f, 1.0f, 0.125f);
+		vec3 decalUVW = localPos / DecalSize;
+		decalUVW.y *= -1.0f;
+
+		vec3 test;
+		if(decalUVW.x >= -1.0f && decalUVW.x <= 1.0f &&
+		   decalUVW.y >= -1.0f && decalUVW.y <= 1.0f &&
+		   decalUVW.z >= -1.0f && decalUVW.z <= 1.0f)
+		{
+			vec2 decalUV = clamp(decalUVW.xy * 0.5f + 0.5f, 0.0f, 1.0f);
+			vec4 decalAlbedo = texture(texSampler[0], decalUV);
+
+			float decalBlend = decalAlbedo.w;
+
+			diffuseAlbedo = mix(diffuseAlbedo, decalAlbedo.xyz, vec3(decalBlend * 0.75f));
+		}
 
 		vec3 color = CalcLighting(normalWS, sunLight.SunDirectionWS, sunLight.SunIrradiance, diffuseAlbedo, 
 			specularAlbedo, roughness * roughness, positionWS, camera.CameraPosWS);
 
-		imageStore(outColor, pixelPos,vec4(color,1.0f));	
+
+		imageStore(outColor, pixelPos,vec4(color,1.0f));
 
 	}
 	

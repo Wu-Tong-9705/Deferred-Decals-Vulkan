@@ -14,8 +14,8 @@ enum Camera_Movement {
 const float YAW = -90.0f;//偏航角
 const float PITCH = 0.0f;//俯仰角
 const float NEARZ = 0.1f;//近裁剪面
-const float FARZ = 100.0f;//远裁剪面
-const float SPEED = 2.0f;//相机移动速度
+const float FARZ = 35.0f;//远裁剪面
+const float SPEED = 5.0f;//相机移动速度
 const float SENSITIVITY = 0.1f;//相机转向敏感度
 const float ZOOM = 45.0f;//缩放比例
 
@@ -30,8 +30,8 @@ public:
 	
 	float m_yaw;//偏航角
 	float m_pitch;//俯仰角
-	float m_near_z = 0.1f;//近裁剪面
-	float m_far_z = 100.0f;//远裁剪面
+	float m_near_z;//近裁剪面
+	float m_far_z;//远裁剪面
 	float m_movement_speed;//相机移动速度
 	float m_mouse_sensitivity;//相机转向敏感度
 	float m_zoom;//缩放比例

@@ -82,5 +82,6 @@
     <None Include="Assets\code\shader\GBuffer.vert" />
     <None Include="Assets\code\shader\GBuffer.frag" />
     <None Include="Assets\code\shader\deferred.comp" />
+    <None Include="Assets\code\shader\picking.comp" />
   </ItemGroup>
 </Project>
