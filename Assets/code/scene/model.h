@@ -2,8 +2,6 @@
 #include "stdafx.h"
 #include "mesh.h"
 #include "texture.h"
-#define N_DECALS (8)
-
 
 class Model
 {
@@ -15,6 +13,7 @@ public:
 	void init_texture_indices();
 	vector<TextureIndicesUniform>* get_texture_indices();
 	void draw(PrimaryCommandBuffer* cmd_buffer_ptr);
+	vec2 get_texture_size(uint n);
 
 	~Model();
 

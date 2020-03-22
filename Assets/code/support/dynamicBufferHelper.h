@@ -9,7 +9,7 @@ using namespace std;
 #define N_SWAPCHAIN_IMAGES (3) 
 const uint64_t ALIGNMENT = 256;
 
-template<typename T> class BufferHelper
+template<typename T> class DynamicBufferHelper
 {
 private:
 	BufferUniquePtr           m_uniform_buffer_ptr;
@@ -17,9 +17,8 @@ private:
 	VkDeviceSize              m_size_total;
 
 public:
-	BufferHelper(BaseDevice* device, string name)
+	DynamicBufferHelper(BaseDevice* device, string name)
 	{
-
 		auto allocator_ptr = MemoryAllocator::create_oneshot(device);
 
 		m_size_per_swapchain_image = Utils::round_up(sizeof(T), ALIGNMENT);
@@ -49,7 +48,7 @@ public:
 			queue_ptr);
 	}
 
-	~BufferHelper()
+	~DynamicBufferHelper()
 	{
 		m_uniform_buffer_ptr.reset();
 	}

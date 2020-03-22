@@ -17,8 +17,8 @@ void Texture::load_texture(string path)
 	auto allocator_ptr = MemoryAllocator::create_oneshot(Engine::Instance()->getDevice());
 
 	#pragma region 从文件获取纹理图像数据
-	int texWidth, texHeight, texChannels;
-	stbi_uc* pixels = stbi_load(path.data(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+	int texChannels;
+	stbi_uc* pixels = stbi_load(path.data(), &m_width, &m_height, &texChannels, STBI_rgb_alpha);
 	/*m_mipLevels = static_cast<uint32_t>(
 		std::floor(std::log2((texWidth > texHeight) ? texWidth : texHeight))) + 1;*/
 	if (!pixels)
@@ -74,8 +74,8 @@ void Texture::load_texture(string path)
 		ImageAspectFlagBits::COLOR_BIT,
 		0,
 		pixels,
-		texWidth * texHeight * 4,
-		texWidth * 4);
+		m_width * m_height * 4,
+		m_width * 4);
 
 	auto image_create_info_ptr = ImageCreateInfo::create_no_alloc(
 		Engine::Instance()->getDevice(),
@@ -83,8 +83,8 @@ void Texture::load_texture(string path)
 		Format::R8G8B8A8_UNORM,
 		ImageTiling::OPTIMAL,
 		ImageUsageFlagBits::SAMPLED_BIT,
-		texWidth,
-		texHeight,
+		m_width,
+		m_height,
 		1,
 		1,
 		SampleCountFlagBits::_1_BIT,
@@ -129,6 +129,11 @@ const char* Texture::get_path()
 uint32_t Texture::get_texture_id()
 {
 	return m_texture_id;
+}
+
+vec2 Texture::getSize()
+{
+	return vec2(m_width, m_height);
 }
 
 void Texture::add_combined_image_sampler()

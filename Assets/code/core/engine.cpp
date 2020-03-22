@@ -73,7 +73,7 @@ void Engine::init()
     m_camera = make_shared<Camera>(vec3(-11.5f, 1.85f, -0.45f));
     m_camera->SetAsActive();
     m_key = make_shared<Key>();
-    
+    m_appsettings = AppSettings();
     
     init_vulkan();
     init_window();
@@ -295,9 +295,10 @@ void Engine::init_buffers()
     #pragma endregion
 
     #pragma region 创建动态缓冲
-    m_mvp_buffer_helper = new BufferHelper<MVPUniform>(m_device_ptr.get(), "MVP");
-    m_sunLight_buffer_helper = new BufferHelper<SunLightUniform>(m_device_ptr.get(), "SunLight");
-    m_camera_buffer_helper = new BufferHelper<CameraUniform>(m_device_ptr.get(), "Camera");
+    m_mvp_dynamic_buffer_helper = new DynamicBufferHelper<MVPUniform>(m_device_ptr.get(), "MVP");
+    m_sunLight_dynamic_buffer_helper = new DynamicBufferHelper<SunLightUniform>(m_device_ptr.get(), "SunLight");
+    m_camera_dynamic_buffer_helper = new DynamicBufferHelper<CameraUniform>(m_device_ptr.get(), "Camera");
+    m_cursor_decal_dynamic_buffer_helper = new DynamicBufferHelper<CursorDecal>(m_device_ptr.get(), "CursorDecal");
     #pragma endregion
 }
 
@@ -383,6 +384,11 @@ void Engine::init_dsgs()
         DescriptorType::STORAGE_BUFFER,
         1, /* n_elements */
         ShaderStageFlagBits::COMPUTE_BIT);
+    dsg_create_info_ptrs[2]->add_binding(
+        3, /* n_binding */
+        DescriptorType::UNIFORM_BUFFER_DYNAMIC,
+        1, /* n_elements */
+        ShaderStageFlagBits::COMPUTE_BIT);
 
     //3:用于deferred读取的GBuffer
     dsg_create_info_ptrs[3] = DescriptorSetCreateInfo::create();
@@ -461,9 +467,9 @@ void Engine::init_dsgs()
         1, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
         0, /* n_binding */
         DescriptorSet::DynamicUniformBufferBindingElement(
-            m_mvp_buffer_helper->getUniform(),
+            m_mvp_dynamic_buffer_helper->getUniform(),
             0, /* in_start_offset */
-            m_mvp_buffer_helper->getSizePerSwapchainImage()));
+            m_mvp_dynamic_buffer_helper->getSizePerSwapchainImage()));
     #pragma endregion
 
     #pragma region 2:deferred所需的参数
@@ -471,17 +477,17 @@ void Engine::init_dsgs()
         2, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
         0, /* n_binding */
         DescriptorSet::DynamicUniformBufferBindingElement(
-            m_sunLight_buffer_helper->getUniform(),
+            m_sunLight_dynamic_buffer_helper->getUniform(),
             0, /* in_start_offset */
-            m_sunLight_buffer_helper->getSizePerSwapchainImage()));
+            m_sunLight_dynamic_buffer_helper->getSizePerSwapchainImage()));
 
     m_dsg_ptr->set_binding_item(
         2, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
         1, /* n_binding */
         DescriptorSet::DynamicUniformBufferBindingElement(
-            m_camera_buffer_helper->getUniform(),
+            m_camera_dynamic_buffer_helper->getUniform(),
             0, /* in_start_offset */
-            m_camera_buffer_helper->getSizePerSwapchainImage()));
+            m_camera_dynamic_buffer_helper->getSizePerSwapchainImage()));
 
     m_dsg_ptr->set_binding_item(
         2, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
@@ -490,6 +496,14 @@ void Engine::init_dsgs()
             m_picking_storage_buffer_ptr.get(),
             0, /* in_start_offset */
             m_picking_buffer_size));
+
+    m_dsg_ptr->set_binding_item(
+        2, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
+        3, /* n_binding */
+        DescriptorSet::DynamicUniformBufferBindingElement(
+            m_cursor_decal_dynamic_buffer_helper->getUniform(),
+            0, /* in_start_offset */
+            m_cursor_decal_dynamic_buffer_helper->getSizePerSwapchainImage()));
     #pragma endregion
 
     #pragma region 3:用于deferred读取的GBuffer
@@ -558,9 +572,9 @@ void Engine::init_dsgs()
         4 + N_SWAPCHAIN_IMAGES, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
         1, /* n_binding */
         DescriptorSet::DynamicUniformBufferBindingElement(
-            m_camera_buffer_helper->getUniform(),
+            m_camera_dynamic_buffer_helper->getUniform(),
             0, /* in_start_offset */
-            m_camera_buffer_helper->getSizePerSwapchainImage()));
+            m_camera_dynamic_buffer_helper->getSizePerSwapchainImage()));
     m_dsg_ptr->set_binding_item(
         4 + N_SWAPCHAIN_IMAGES, /* n_set:用于dsg标识内部的描述符集，与dsg_create_info_ptrs下标一一对应，与shader里的set无关*/
         2, /* n_binding */
@@ -922,9 +936,9 @@ void Engine::init_command_buffers()
                 AccessFlagBits::UNIFORM_READ_BIT,               /* in_destination_access_mask */
                 universal_queue_ptr->get_queue_family_index(),         /* in_src_queue_family_index  */
                 universal_queue_ptr->get_queue_family_index(),         /* in_dst_queue_family_index  */
-                m_mvp_buffer_helper->getUniform(),
-                m_mvp_buffer_helper->getSizePerSwapchainImage() * n_command_buffer, /* in_offset                  */
-                m_mvp_buffer_helper->getSizePerSwapchainImage());
+                m_mvp_dynamic_buffer_helper->getUniform(),
+                m_mvp_dynamic_buffer_helper->getSizePerSwapchainImage() * n_command_buffer, /* in_offset                  */
+                m_mvp_dynamic_buffer_helper->getSizePerSwapchainImage());
 
             cmd_buffer_ptr->record_pipeline_barrier(
                 PipelineStageFlagBits::HOST_BIT,
@@ -1036,7 +1050,7 @@ void Engine::init_command_buffers()
                 m_renderpass_ptr.get(),
                 SubpassContents::INLINE);
         
-            const uint32_t data_ub_offset = static_cast<uint32_t>(m_mvp_buffer_helper->getSizePerSwapchainImage() * n_command_buffer);
+            const uint32_t data_ub_offset = static_cast<uint32_t>(m_mvp_dynamic_buffer_helper->getSizePerSwapchainImage() * n_command_buffer);
             DescriptorSet* ds_ptr[1] = { m_dsg_ptr->get_descriptor_set(1) };
 
             cmd_buffer_ptr->record_bind_pipeline(
@@ -1058,34 +1072,43 @@ void Engine::init_command_buffers()
 
         #pragma endregion
 
-        #pragma region 确保sunlight_uniform和camera_uniform缓冲已经写入
+        #pragma region 确保计算着色器所需的uniform缓冲已经写入
         {
             BufferBarrier buffer_barrier1(
                 AccessFlagBits::HOST_WRITE_BIT,                 /* in_source_access_mask      */
                 AccessFlagBits::UNIFORM_READ_BIT,               /* in_destination_access_mask */
                 universal_queue_ptr->get_queue_family_index(),         /* in_src_queue_family_index  */
                 universal_queue_ptr->get_queue_family_index(),         /* in_dst_queue_family_index  */
-                m_sunLight_buffer_helper->getUniform(),
-                m_sunLight_buffer_helper->getSizePerSwapchainImage()* n_command_buffer, /* in_offset                  */
-                m_sunLight_buffer_helper->getSizePerSwapchainImage());
+                m_sunLight_dynamic_buffer_helper->getUniform(),
+                m_sunLight_dynamic_buffer_helper->getSizePerSwapchainImage()* n_command_buffer, /* in_offset                  */
+                m_sunLight_dynamic_buffer_helper->getSizePerSwapchainImage());
 
             BufferBarrier buffer_barrier2(
                 AccessFlagBits::HOST_WRITE_BIT,                 /* in_source_access_mask      */
                 AccessFlagBits::UNIFORM_READ_BIT,               /* in_destination_access_mask */
                 universal_queue_ptr->get_queue_family_index(),         /* in_src_queue_family_index  */
                 universal_queue_ptr->get_queue_family_index(),         /* in_dst_queue_family_index  */
-                m_camera_buffer_helper->getUniform(),
-                m_camera_buffer_helper->getSizePerSwapchainImage() * n_command_buffer, /* in_offset                  */
-                m_camera_buffer_helper->getSizePerSwapchainImage());
+                m_camera_dynamic_buffer_helper->getUniform(),
+                m_camera_dynamic_buffer_helper->getSizePerSwapchainImage() * n_command_buffer, /* in_offset                  */
+                m_camera_dynamic_buffer_helper->getSizePerSwapchainImage());
+
+            BufferBarrier buffer_barrier3(
+                AccessFlagBits::HOST_WRITE_BIT,                 /* in_source_access_mask      */
+                AccessFlagBits::UNIFORM_READ_BIT,               /* in_destination_access_mask */
+                universal_queue_ptr->get_queue_family_index(),         /* in_src_queue_family_index  */
+                universal_queue_ptr->get_queue_family_index(),         /* in_dst_queue_family_index  */
+                m_cursor_decal_dynamic_buffer_helper->getUniform(),
+                m_cursor_decal_dynamic_buffer_helper->getSizePerSwapchainImage() * n_command_buffer, /* in_offset                  */
+                m_cursor_decal_dynamic_buffer_helper->getSizePerSwapchainImage());
         
-            BufferBarrier buffer_barriers[2] = { buffer_barrier1 , buffer_barrier2 };
+            BufferBarrier buffer_barriers[3] = { buffer_barrier1 , buffer_barrier2, buffer_barrier3 };
             cmd_buffer_ptr->record_pipeline_barrier(
                 PipelineStageFlagBits::HOST_BIT,
                 PipelineStageFlagBits::COMPUTE_SHADER_BIT,
                 DependencyFlagBits::NONE,
                 0,               /* in_memory_barrier_count        */
                 nullptr,         /* in_memory_barriers_ptr         */
-                2,               /* in_buffer_memory_barrier_count */
+                3,               /* in_buffer_memory_barrier_count */
                 buffer_barriers,
                 0,               /* in_image_memory_barrier_count  */
                 nullptr);        /* in_image_memory_barriers_ptr   */
@@ -1214,7 +1237,7 @@ void Engine::init_command_buffers()
 
         #pragma region 获取屏幕中间像素的位置和法线信息
         {
-            const uint32_t data_ub_offset[] = { static_cast<uint32_t>(m_camera_buffer_helper->getSizePerSwapchainImage() * n_command_buffer) };
+            const uint32_t data_ub_offset[] = { static_cast<uint32_t>(m_camera_dynamic_buffer_helper->getSizePerSwapchainImage() * n_command_buffer) };
 
             cmd_buffer_ptr->record_bind_pipeline(
                 PipelineBindPoint::COMPUTE,
@@ -1271,8 +1294,9 @@ void Engine::init_command_buffers()
         #pragma region 延迟纹理采样和光照
         {
             const uint32_t data_ub_offset[] = {
-                static_cast<uint32_t>(m_sunLight_buffer_helper->getSizePerSwapchainImage() * n_command_buffer),
-                static_cast<uint32_t>(m_camera_buffer_helper->getSizePerSwapchainImage() * n_command_buffer)
+                static_cast<uint32_t>(m_sunLight_dynamic_buffer_helper->getSizePerSwapchainImage() * n_command_buffer),
+                static_cast<uint32_t>(m_camera_dynamic_buffer_helper->getSizePerSwapchainImage() * n_command_buffer),
+                static_cast<uint32_t>(m_cursor_decal_dynamic_buffer_helper->getSizePerSwapchainImage() * n_command_buffer)
             };
 
             cmd_buffer_ptr->record_bind_pipeline(
@@ -1291,7 +1315,7 @@ void Engine::init_command_buffers()
                 0, /* firstSet */
                 4, /* setCount：传入的描述符集与shader中的set一一对应 */
                 ds_ptr,
-                2,                /* dynamicOffsetCount */
+                3,                /* dynamicOffsetCount */
                 data_ub_offset); /* pDynamicOffsets    */
 
             cmd_buffer_ptr->record_push_constants(
@@ -1518,34 +1542,164 @@ void Engine::update_data(uint32_t in_n_swapchain_image)
 {
     static auto lastTime = chrono::high_resolution_clock::now();
     auto currentTime = chrono::high_resolution_clock::now();
-    float time = chrono::duration<float, chrono::seconds::period>(currentTime - lastTime).count();
+    float delta_time = chrono::duration<float, chrono::seconds::period>(currentTime - lastTime).count();
     lastTime = currentTime;
-    if (m_key->IsPressed(KeyID::KEY_ID_FORWARD))
-        m_camera->ProcessKeyboard(FORWARD, time);
-    if (m_key->IsPressed(KeyID::KEY_ID_BACKWARD))
-        m_camera->ProcessKeyboard(BACKWARD, time);
-    if (m_key->IsPressed(KeyID::KEY_ID_LEFT))
-        m_camera->ProcessKeyboard(LEFT, time);
-    if (m_key->IsPressed(KeyID::KEY_ID_RIGHT))
-        m_camera->ProcessKeyboard(RIGHT, time);
 
+    #pragma region 相机移动
+    if (m_key->IsPressed(KeyID::KEY_ID_FORWARD))
+    {
+        m_camera->ProcessKeyboard(FORWARD, delta_time);
+    }
+    if (m_key->IsPressed(KeyID::KEY_ID_BACKWARD))
+    {
+        m_camera->ProcessKeyboard(BACKWARD, delta_time);
+    }
+    if (m_key->IsPressed(KeyID::KEY_ID_LEFT))
+    {
+        m_camera->ProcessKeyboard(LEFT, delta_time);
+    }
+    if (m_key->IsPressed(KeyID::KEY_ID_RIGHT))
+    {
+        m_camera->ProcessKeyboard(RIGHT, delta_time);
+    }
+    #pragma endregion
+
+    #pragma region 贴花设置
+    //贴花尺寸
+    if (m_key->IsPressed(KeyID::KEY_ID_ADD))
+    {
+        if (m_key->IsPressed(KeyID::KEY_ID_WIDTH))
+        {
+            m_appsettings.update(ParamType::DECAL_SCALE_X, Direction::UP, delta_time);
+        }
+        else if (m_key->IsPressed(KeyID::KEY_ID_HEIGHT))
+        {
+            m_appsettings.update(ParamType::DECAL_SCALE_Y, Direction::UP, delta_time);
+        }
+        else
+        {
+            m_appsettings.update(ParamType::DECAL_SCALE_X, Direction::UP, delta_time);
+            m_appsettings.update(ParamType::DECAL_SCALE_Y, Direction::UP, delta_time);
+        }
+    }
+    if (m_key->IsPressed(KeyID::KEY_ID_MINUS))
+    {
+        if (m_key->IsPressed(KeyID::KEY_ID_WIDTH))
+        {
+            m_appsettings.update(ParamType::DECAL_SCALE_X, Direction::DOWN, delta_time);
+        }
+        else if (m_key->IsPressed(KeyID::KEY_ID_HEIGHT))
+        {
+            m_appsettings.update(ParamType::DECAL_SCALE_Y, Direction::DOWN, delta_time);
+        }
+        else
+        {
+            m_appsettings.update(ParamType::DECAL_SCALE_X, Direction::DOWN, delta_time);
+            m_appsettings.update(ParamType::DECAL_SCALE_Y, Direction::DOWN, delta_time);
+        }
+    }
+
+    //贴花方向
+    if (m_key->IsPressed(KeyID::KEY_ID_ANTICLOCKWIZE))
+    {
+        m_appsettings.update(ParamType::DECAL_ROTATION, Direction::DOWN, delta_time);
+    }
+    if (m_key->IsPressed(KeyID::KEY_ID_CLOCKWIZE))
+    {
+        m_appsettings.update(ParamType::DECAL_ROTATION, Direction::UP, delta_time);
+    }
+
+    //贴花属性
+    if (m_key->IsPressed(KeyID::KEY_ID_UP))
+    {
+        if (m_key->IsPressed(KeyID::KEY_ID_F))
+        {
+            m_appsettings.update(ParamType::DECAL_ANGLE_FADE, Direction::UP, delta_time);
+        }
+        if (m_key->IsPressed(KeyID::KEY_ID_T))
+        {
+            m_appsettings.update(ParamType::DECAL_THICKNESS, Direction::UP, delta_time);
+        }
+        else if (m_key->IsPressed(KeyID::KEY_ID_I))
+        {
+            m_appsettings.update(ParamType::DECAL_INDENSITY, Direction::UP, delta_time);
+        }
+        else if (m_key->IsPressed(KeyID::KEY_ID_C))
+        {
+            m_appsettings.update(ParamType::DECAL_ALBEDO, Direction::UP, delta_time);
+        }
+    }
+    if (m_key->IsPressed(KeyID::KEY_ID_DOWN))
+    {
+
+        if (m_key->IsPressed(KeyID::KEY_ID_F))
+        {
+            m_appsettings.update(ParamType::DECAL_ANGLE_FADE, Direction::DOWN, delta_time);
+        }
+        if (m_key->IsPressed(KeyID::KEY_ID_T))
+        {
+            m_appsettings.update(ParamType::DECAL_THICKNESS, Direction::DOWN, delta_time);
+        }
+        else if (m_key->IsPressed(KeyID::KEY_ID_I))
+        {
+            m_appsettings.update(ParamType::DECAL_INDENSITY, Direction::DOWN, delta_time);
+        }
+        else if (m_key->IsPressed(KeyID::KEY_ID_C))
+        {
+            m_appsettings.update(ParamType::DECAL_ALBEDO, Direction::DOWN, delta_time);
+        }
+    }
+
+    //选择贴花
+    for (int i = 0; i < N_DECALS; i++)
+    {
+        if (m_key->IsPressed((KeyID)(KeyID::KEY_ID_1 + i)))
+        {
+            m_appsettings.set_decal_id(i);
+        }
+    }
+    if (m_key->IsPressed(KeyID::KEY_ID_TAB))
+    {
+        m_appsettings.tab_decal();
+        m_key->SetReleased(KeyID::KEY_ID_TAB);
+    }
+    #pragma endregion
+
+    #pragma region 写入动态uniform
     Queue* queue = m_device_ptr->get_universal_queue(0);
 
     MVPUniform mvp;
     mvp.model = scale(mat4(1.0f), vec3(0.01f, 0.01f, 0.01f));
     mvp.view = m_camera->GetViewMatrix();
     mvp.proj = m_camera->GetProjMatrix();
-    m_mvp_buffer_helper->update(queue, &mvp, in_n_swapchain_image);
+    m_mvp_dynamic_buffer_helper->update(queue, &mvp, in_n_swapchain_image);
 
     SunLightUniform sun_light;
     sun_light.SunDirectionWS = vec3(0.5f, 0.1f, 0.5f);
     sun_light.SunIrradiance = vec3(10.0f, 10.0f, 10.0f);
-    m_sunLight_buffer_helper->update(queue, &sun_light, in_n_swapchain_image);
+    m_sunLight_dynamic_buffer_helper->update(queue, &sun_light, in_n_swapchain_image);
 
     CameraUniform camera;
     camera.CameraPosWS = m_camera->m_position;
     camera.InvViewProj = inverse(mvp.proj * mvp.view);
-    m_camera_buffer_helper->update(queue, &camera, in_n_swapchain_image);
+    m_camera_dynamic_buffer_helper->update(queue, &camera, in_n_swapchain_image);
+
+    CursorDecal cursorDecal;
+    uint decal_id = m_appsettings.get_decal_id();
+    vec2 decal_size = m_model->get_texture_size(decal_id * 2);
+    cursorDecal.size = vec3(
+        decal_size.x * m_appsettings.getParam(ParamType::DECAL_SCALE_X),
+        decal_size.y * m_appsettings.getParam(ParamType::DECAL_SCALE_Y),
+        m_appsettings.getParam(ParamType::DECAL_THICKNESS));
+    cursorDecal.albedoTexIdx = decal_id * 2;
+    cursorDecal.normalTexIdx = decal_id * 2 + 1;
+    cursorDecal.rotation = m_appsettings.getParam(ParamType::DECAL_ROTATION);
+    cursorDecal.angle_fade = m_appsettings.getParam(ParamType::DECAL_ANGLE_FADE);
+    cursorDecal.albedo = m_appsettings.getParam(ParamType::DECAL_ALBEDO);
+    cursorDecal.intensity = m_appsettings.getParam(ParamType::DECAL_INDENSITY);
+    m_cursor_decal_dynamic_buffer_helper->update(queue, &cursorDecal, in_n_swapchain_image);
+
+    #pragma endregion
 
 }
 
@@ -1660,9 +1814,10 @@ void Engine::deinit()
     
     m_texture_indices_uniform_buffer_ptr.reset();
 
-    delete m_mvp_buffer_helper;
-    delete m_sunLight_buffer_helper;
-    delete m_camera_buffer_helper;
+    delete m_mvp_dynamic_buffer_helper;
+    delete m_sunLight_dynamic_buffer_helper;
+    delete m_camera_dynamic_buffer_helper;
+    delete m_cursor_decal_dynamic_buffer_helper;
 
     m_picking_storage_buffer_ptr.reset();
 

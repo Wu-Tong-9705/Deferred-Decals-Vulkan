@@ -55,13 +55,12 @@ using namespace Anvil;
 #define GLM_FORCE_RADIANS//统一使用弧度
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE//使用vulkan深度范围(0,1)，默认使用的是OpenGL范围(-1,1)。
 #define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES//强制默认对齐
-#define N_SWAPCHAIN_IMAGES (3) 
 #include "glm/glm.hpp"
 #include "glm/gtc/matrix_transform.hpp"
 #include "glm/gtx/hash.hpp"
 #include "assimp/Importer.hpp"
 #include "assimp/scene.h"
-#include "assimp/postprocess.h" 
+#include "assimp/postprocess.h"
 using namespace glm;
 
 //struct
@@ -124,6 +123,17 @@ struct TextureIndicesUniform
     uint32_t roughness;
     uint32_t metallic;
 };
+struct CursorDecal
+{
+    alignas(16) vec3 size;
+    alignas(4) float rotation;
+    alignas(4) float angle_fade;
+    alignas(4) float intensity;
+    alignas(4) float albedo;
+    alignas(4) uint32_t albedoTexIdx;
+    alignas(4) uint32_t normalTexIdx;
+};
 
  //core
 #include "core/engine.h"
+#define N_SWAPCHAIN_IMAGES (3)

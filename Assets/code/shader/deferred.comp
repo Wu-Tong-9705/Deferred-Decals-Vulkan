@@ -45,6 +45,17 @@ layout(set = 1, binding = 2) buffer Picking
 	vec3 Normal;
 }picking;
 
+layout(set = 1, binding = 3) uniform CursorDecal
+{
+	vec4 size;
+	float rotation;
+	float angleFade;
+	float intensity;
+	float albedo;
+	uint albedoTexIdx;
+	uint normalTexIdx;
+}cursorDecal;
+
 layout(set = 2, binding = 0) uniform sampler2D depthMap;
 layout(set = 2, binding = 1) uniform sampler2D tangentFrameMap;
 layout(set = 2, binding = 2) uniform sampler2D UVandDepthGradientMap;
@@ -53,6 +64,21 @@ layout(set = 2, binding = 4) uniform usampler2D materialIDMap;
 
 layout(set = 3, binding = 0) uniform writeonly image2D outColor;
 
+vec3 Rotate(float theta, vec3 axis, vec3 In)
+{   
+	 vec3 result;
+	 result.x = In.x * (cos(theta) + axis.x * axis.x * (1 - cos(theta))) +
+				 In.y * (axis.x * axis.y * (1 - cos(theta)) - axis.z * sin(theta)) + 
+				 In.z * (axis.x * axis.z * (1 - cos(theta) + axis.y * sin(theta)));
+	 result.y = In.x * (axis.x * axis.y * (1 - cos(theta)) + axis.z * sin(theta)) +  
+				 In.y * (axis.y * axis.y * (1 - cos(theta)) + cos(theta)) + 
+				 In.z * (axis.y * axis.z * (1 - cos(theta)) - axis.x * sin(theta));
+	 result.z = In.x * (axis.x * axis.z * (1 - cos(theta) - axis.y * sin(theta))) + 
+				 In.y * (axis.y * axis.z * (1 -cos(theta)) + axis.x * sin(theta)) + 
+				 In.z * (axis.z * axis.z * (1 - cos(theta)) + cos(theta));
+
+	return normalize(result);
+}
 
 vec4 UnpackQuaternion(vec4 q)
 {
@@ -213,27 +239,24 @@ void main()
 
 		vec3 localPos = positionWS - picking.Position;
 		localPos = transpose(orientation) * localPos;
-		vec3 DecalSize = vec3(820.0f / 1024.0f, 1.0f, 0.125f);
-		vec3 decalUVW = localPos / DecalSize;
+
+		localPos = mat3(cos(cursorDecal.rotation), sin(cursorDecal.rotation), 0,
+						-sin(cursorDecal.rotation),cos(cursorDecal.rotation), 0,
+						0, 0, 1) * localPos;
+		vec3 decalUVW = localPos / cursorDecal.size.xyz;
 		decalUVW.y *= -1.0f;
 
-		vec3 test;
 		if(decalUVW.x >= -1.0f && decalUVW.x <= 1.0f &&
 		   decalUVW.y >= -1.0f && decalUVW.y <= 1.0f &&
 		   decalUVW.z >= -1.0f && decalUVW.z <= 1.0f &&
-		   dot(picking.Normal, normalWS) > 0.5f)
+		   dot(picking.Normal, tangentFrameMatrix[2]) > cursorDecal.angleFade)
 		{
 			vec2 decalUV = clamp(decalUVW.xy * 0.5f + 0.5f, 0.0f, 1.0f);
-			vec4 decalAlbedo = texture(texSampler[0], decalUV);
-
-			float decalBlend = decalAlbedo.w;
-
-			diffuseAlbedo = mix(diffuseAlbedo, decalAlbedo.xyz, vec3(decalBlend * 0.75f));
+			vec4 decalAlbedo = texture(texSampler[cursorDecal.albedoTexIdx], decalUV);
+			diffuseAlbedo = mix(diffuseAlbedo, decalAlbedo.xyz * cursorDecal.albedo, vec3(decalAlbedo.w * cursorDecal.intensity));
 		}
-
 		vec3 color = CalcLighting(normalWS, sunLight.SunDirectionWS, sunLight.SunIrradiance, diffuseAlbedo, 
 			specularAlbedo, roughness * roughness, positionWS, camera.CameraPosWS);
-
 
 		imageStore(outColor, pixelPos,vec4(color,1.0f));
 

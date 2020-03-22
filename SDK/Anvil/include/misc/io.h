@@ -54,11 +54,42 @@ namespace Anvil
 #if defined(ANVIL_INCLUDE_WIN3264_WINDOW_SYSTEM_SUPPORT)
         KEY_ID_ESCAPE = ANVIL_KEY_HELPER(ESCAPE),
         KEY_ID_F1 = ANVIL_KEY_HELPER(F1),
+        KEY_ID_SPACE = ANVIL_KEY_HELPER(SPACE),
+
         KEY_ID_FORWARD = 87,
         KEY_ID_BACKWARD = 83,
         KEY_ID_LEFT = 65,
         KEY_ID_RIGHT = 68,
-        KEY_ID_SPACE = ANVIL_KEY_HELPER(SPACE),
+
+        KEY_ID_ADD = 107,
+        KEY_ID_MINUS = 109,
+        KEY_ID_WIDTH = 188,
+        KEY_ID_HEIGHT = 190,
+
+        KEY_ID_ANTICLOCKWIZE = 102,
+        KEY_ID_UP = 104,
+        KEY_ID_CLOCKWIZE = 100,
+        KEY_ID_DOWN = 98,
+
+        KEY_ID_T = 84,
+        KEY_ID_F = 70,
+        KEY_ID_I = 73,
+        KEY_ID_C = 67,
+
+        KEY_ID_R = 82,
+
+        KEY_ID_TAB = 9,
+        KEY_ID_CTRL = 17,
+
+        KEY_ID_1 = 49, 
+        KEY_ID_2, 
+        KEY_ID_3, 
+        KEY_ID_4, 
+        KEY_ID_5, 
+        KEY_ID_6, 
+        KEY_ID_7, 
+        KEY_ID_8, 
+
 #endif
 #else
 #if defined(ANVIL_INCLUDE_XCB_WINDOW_SYSTEM_SUPPORT)
@@ -70,9 +101,6 @@ namespace Anvil
 #endif
 
 #endif
-        KEY_ID_COUNT,
-
-        KEY_ID_UNKNOWN = KEY_ID_COUNT
     } KeyID;
 
     class IO

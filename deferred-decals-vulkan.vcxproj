@@ -148,6 +148,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="Assets\code\core\appSettings.h" />
     <ClInclude Include="Assets\code\core\engine.h" />
     <ClInclude Include="Assets\code\scene\camera.h" />
     <ClInclude Include="Assets\code\stdafx.h" />
@@ -159,6 +160,7 @@
     <ClInclude Include="Assets\code\support\single_active.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Assets\code\core\appSettings.cpp" />
     <ClCompile Include="Assets\code\core\engine.cpp" />
     <ClCompile Include="Assets\code\main.cpp" />
     <ClCompile Include="Assets\code\scene\camera.cpp" />
@@ -168,7 +170,7 @@
     <ClCompile Include="Assets\code\scene\model.cpp" />
     <ClCompile Include="Assets\code\scene\material.cpp" />
     <ClCompile Include="Assets\code\support\keys.cpp" />
-    <ClCompile Include="Assets\code\support\bufferHelper.h">
+    <ClCompile Include="Assets\code\support\dynamicBufferHelper.h">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
     </ClCompile>

@@ -42,6 +42,9 @@
     <ClInclude Include="Assets\code\support\keys.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="Assets\code\core\appSettings.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Assets\code\stdafx.cpp">
@@ -71,7 +74,10 @@
     <ClCompile Include="Assets\code\support\keys.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="Assets\code\support\bufferHelper.h">
+    <ClCompile Include="Assets\code\support\dynamicBufferHelper.h">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Assets\code\core\appSettings.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

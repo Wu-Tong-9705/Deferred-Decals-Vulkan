@@ -184,3 +184,8 @@ void Model::draw(PrimaryCommandBuffer* cmd_buffer_ptr)
 		m_meshes[i]->draw(cmd_buffer_ptr);
 	}
 }
+
+vec2 Model::get_texture_size(uint n)
+{
+	return m_textures[n]->getSize();
+}

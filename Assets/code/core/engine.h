@@ -3,7 +3,8 @@
 #include "../scene/camera.h"
 #include "../support/keys.h"
 #include "../scene/model.h"
-#include "support/bufferHelper.h"
+#include "support/dynamicBufferHelper.h"
+#include "appSettings.h"
 
 struct DeferredConstants
 {
@@ -104,7 +105,7 @@ private:
     shared_ptr<Model>         m_model;
     shared_ptr<Camera>        m_camera;
     shared_ptr<Key>           m_key;
-
+    AppSettings               m_appsettings;
 
     BaseDeviceUniquePtr       m_device_ptr;
     InstanceUniquePtr         m_instance_ptr;
@@ -165,9 +166,10 @@ private:
 
     DeferredConstants         m_deferred_constants;
 
-    BufferHelper<MVPUniform>* m_mvp_buffer_helper;
-    BufferHelper<SunLightUniform>* m_sunLight_buffer_helper;
-    BufferHelper<CameraUniform>* m_camera_buffer_helper;
+    DynamicBufferHelper<MVPUniform>* m_mvp_dynamic_buffer_helper;
+    DynamicBufferHelper<SunLightUniform>* m_sunLight_dynamic_buffer_helper;
+    DynamicBufferHelper<CameraUniform>* m_camera_dynamic_buffer_helper;
+    DynamicBufferHelper<CursorDecal>* m_cursor_decal_dynamic_buffer_helper;
 
     BufferUniquePtr           m_picking_storage_buffer_ptr;
     VkDeviceSize              m_picking_buffer_size;
