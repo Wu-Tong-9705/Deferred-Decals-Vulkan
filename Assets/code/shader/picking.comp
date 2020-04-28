@@ -56,7 +56,6 @@ void main()
 	vec4 tangentFrame = UnpackQuaternion(texelFetch(tangentFrameMap, PixelPos, 0));
 	tangentFrame.w *= wsign;
 
-
 	vec2 uv = (PixelPos + 0.5f) / constant.RTSize;
 	uv = uv * 2.0f - 1.0f;
 	vec4 positionWS =  camera.InvViewProj * vec4(uv, depth, 1.0f);
@@ -65,6 +64,4 @@ void main()
 
 	picking.Position =  positionWS.xyz / positionWS.w;
 	picking.Normal = normal;
-
-
 }

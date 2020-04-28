@@ -156,7 +156,7 @@
     <ClInclude Include="Assets\code\scene\mesh.h" />
     <ClInclude Include="Assets\code\scene\material.h" />
     <ClInclude Include="Assets\code\scene\texture.h" />
-    <ClInclude Include="Assets\code\support\keys.h" />
+    <ClInclude Include="Assets\code\support\input.h" />
     <ClInclude Include="Assets\code\support\single_active.h" />
   </ItemGroup>
   <ItemGroup>
@@ -169,7 +169,6 @@
     <ClCompile Include="Assets\code\stdafx.cpp" />
     <ClCompile Include="Assets\code\scene\model.cpp" />
     <ClCompile Include="Assets\code\scene\material.cpp" />
-    <ClCompile Include="Assets\code\support\keys.cpp" />
     <ClCompile Include="Assets\code\support\dynamicBufferHelper.h">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
@@ -177,6 +176,8 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Anvil\build\Anvil.sln" />
+    <None Include="Assets\code\shader\cluster.frag" />
+    <None Include="Assets\code\shader\cluster.vert" />
     <None Include="Assets\code\shader\deferred.comp" />
     <None Include="Assets\code\shader\GBuffer.frag" />
     <None Include="Assets\code\shader\GBuffer.vert" />

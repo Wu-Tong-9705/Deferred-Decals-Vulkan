@@ -39,10 +39,10 @@
     <ClInclude Include="Assets\code\support\single_active.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="Assets\code\support\keys.h">
+    <ClInclude Include="Assets\code\core\appSettings.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="Assets\code\core\appSettings.h">
+    <ClInclude Include="Assets\code\support\input.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
@@ -71,9 +71,6 @@
     <ClCompile Include="Assets\code\scene\camera.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="Assets\code\support\keys.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
     <ClCompile Include="Assets\code\support\dynamicBufferHelper.h">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -92,5 +89,7 @@
     <None Include="Assets\code\shader\GBuffer.frag" />
     <None Include="Assets\code\shader\deferred.comp" />
     <None Include="Assets\code\shader\picking.comp" />
+    <None Include="Assets\code\shader\cluster.vert" />
+    <None Include="Assets\code\shader\cluster.frag" />
   </ItemGroup>
 </Project>

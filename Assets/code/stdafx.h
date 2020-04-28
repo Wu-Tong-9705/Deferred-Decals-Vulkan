@@ -116,6 +116,23 @@ struct Vertex
             bitangent == other.bitangent;
     }
 };
+struct VertexOnlyPos
+{
+    vec3 pos;
+
+    //属性描述：顶点着色器如何从顶点数据中提取顶点属性
+    static array<VertexInputAttribute, 1> getVertexInputAttribute()
+    {
+        array<VertexInputAttribute, 1> vertexInputAttributes = {};
+
+        vertexInputAttributes[0] = VertexInputAttribute(
+            0, /* in_location */
+            Format::R32G32B32_SFLOAT,
+            offsetof(Vertex, pos));
+
+        return vertexInputAttributes;
+    }
+};
 struct TextureIndicesUniform
 {
     uint32_t albedo;
@@ -133,7 +150,42 @@ struct CursorDecal
     alignas(4) uint32_t albedoTexIdx;
     alignas(4) uint32_t normalTexIdx;
 };
+struct Decal
+{
+    alignas(16) vec3 position;
+    alignas(16) vec3 normal;
+    alignas(16) vec3 size;
+    alignas(4) float angle_fade;
+    alignas(4) float intensity;
+    alignas(4) float albedo;
+    alignas(4) uint32_t albedoTexIdx;
+    alignas(4) uint32_t normalTexIdx;
 
- //core
-#include "core/engine.h"
+    Decal(vec3 position, vec3 normal, CursorDecal& cursorDecal)
+    {
+        this->position = position;
+        this->normal = normal;
+        size = cursorDecal.size;
+        angle_fade = cursorDecal.angle_fade;
+        intensity = cursorDecal.intensity;
+        albedo = cursorDecal.albedo;
+        albedoTexIdx = cursorDecal.albedoTexIdx;
+        normalTexIdx = cursorDecal.normalTexIdx;
+    }
+
+    Decal() = default;
+};
+struct BoundingOrientedBox
+{
+    vec3 Center;            // Center of the box.
+    vec3 Extents;           // Distance from the center to each side.
+    mat3 Orientation;       // rotation matrix(box -> world).
+};
+
+//core
 #define N_SWAPCHAIN_IMAGES (3)
+#define N_MAX_STORED_DECALS (64)
+#define NUM_X_TILES (16)
+#define NUM_Y_TILES (16)
+#define NUM_Z_TILES (16)
+#include "core/engine.h"

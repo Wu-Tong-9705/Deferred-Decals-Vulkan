@@ -307,6 +307,14 @@ LRESULT CALLBACK Anvil::WindowWin3264::msg_callback_pfn_proc(HWND   in_window_ha
             return 0;
         }
 
+        case WM_LBUTTONUP:
+        {
+            OnMouseButtonCallbackArgument callback_data;
+
+            window_ptr->callback(WINDOW_CALLBACK_ID_MOUSE_LBUTTON_UP, &callback_data);
+            return 0;
+        }
+
         case WM_MOUSEWHEEL:
         {
             OnMouseWheelCallbackArgument callback_data((short)HIWORD(in_param_wide));

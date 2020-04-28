@@ -64,22 +64,6 @@ layout(set = 2, binding = 4) uniform usampler2D materialIDMap;
 
 layout(set = 3, binding = 0) uniform writeonly image2D outColor;
 
-vec3 Rotate(float theta, vec3 axis, vec3 In)
-{   
-	 vec3 result;
-	 result.x = In.x * (cos(theta) + axis.x * axis.x * (1 - cos(theta))) +
-				 In.y * (axis.x * axis.y * (1 - cos(theta)) - axis.z * sin(theta)) + 
-				 In.z * (axis.x * axis.z * (1 - cos(theta) + axis.y * sin(theta)));
-	 result.y = In.x * (axis.x * axis.y * (1 - cos(theta)) + axis.z * sin(theta)) +  
-				 In.y * (axis.y * axis.y * (1 - cos(theta)) + cos(theta)) + 
-				 In.z * (axis.y * axis.z * (1 - cos(theta)) - axis.x * sin(theta));
-	 result.z = In.x * (axis.x * axis.z * (1 - cos(theta) - axis.y * sin(theta))) + 
-				 In.y * (axis.y * axis.z * (1 -cos(theta)) + axis.x * sin(theta)) + 
-				 In.z * (axis.z * axis.z * (1 - cos(theta)) + cos(theta));
-
-	return normalize(result);
-}
-
 vec4 UnpackQuaternion(vec4 q)
 {
 	q.xyz = q.xyz * 2.0f - 1.0f;
@@ -252,8 +236,16 @@ void main()
 		   dot(picking.Normal, tangentFrameMatrix[2]) > cursorDecal.angleFade)
 		{
 			vec2 decalUV = clamp(decalUVW.xy * 0.5f + 0.5f, 0.0f, 1.0f);
+
 			vec4 decalAlbedo = texture(texSampler[cursorDecal.albedoTexIdx], decalUV);
-			diffuseAlbedo = mix(diffuseAlbedo, decalAlbedo.xyz * cursorDecal.albedo, vec3(decalAlbedo.w * cursorDecal.intensity));
+			vec3 blend = vec3(decalAlbedo.w * cursorDecal.intensity);
+			diffuseAlbedo = mix(diffuseAlbedo, decalAlbedo.xyz * cursorDecal.albedo, blend);
+
+			vec3 decalNormalTS = texture(texSampler[cursorDecal.normalTexIdx], decalUV).xyz;
+			decalNormalTS = decalNormalTS * 2.0f - 1.0f;
+			decalNormalTS.z *= -1.0f;
+			vec3 decalNormalWS = orientation * decalNormalTS;
+			normalWS = mix(normalWS, decalNormalWS, blend);
 		}
 		vec3 color = CalcLighting(normalWS, sunLight.SunDirectionWS, sunLight.SunIrradiance, diffuseAlbedo, 
 			specularAlbedo, roughness * roughness, positionWS, camera.CameraPosWS);
