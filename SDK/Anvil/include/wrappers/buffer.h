@@ -166,11 +166,13 @@ namespace Anvil
          **/
         bool read(VkDeviceSize in_start_offset,
                   VkDeviceSize in_size,
-                  void*        out_result_ptr);
+                  void*        out_result_ptr,
+                  Anvil::Queue* in_opt_queue_ptr = nullptr);
         bool read(VkDeviceSize in_start_offset,
                   VkDeviceSize in_size,
                   uint32_t     in_device_mask,
-                  void*        out_result_ptr);
+                  void*        out_result_ptr,
+                  Anvil::Queue* in_opt_queue_ptr = nullptr);
 
         bool requires_dedicated_allocation() const
         {

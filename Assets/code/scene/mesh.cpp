@@ -38,9 +38,9 @@ void Mesh::load_mesh(const aiMesh* mesh, int i)
 		vertex.tangent.y = mesh->mTangents[i].y;
 		vertex.tangent.z = mesh->mTangents[i].z;
 
-		vertex.bitangent.x = mesh->mBitangents[i].x;
-		vertex.bitangent.y = mesh->mBitangents[i].y;
-		vertex.bitangent.z = mesh->mBitangents[i].z;
+		vertex.bitangent.x = -mesh->mBitangents[i].x;
+		vertex.bitangent.y = -mesh->mBitangents[i].y;
+		vertex.bitangent.z = -mesh->mBitangents[i].z;
 
 
 		vertices.push_back(vertex);
@@ -121,7 +121,7 @@ void Mesh::draw(PrimaryCommandBuffer* cmd_buffer_ptr)
 		ShaderStageFlagBits::FRAGMENT_BIT,
 		0, /* in_offset */
 		4,
-		m_material->get_texture_id());
+		m_material->get_material_id());
 
 	Buffer* buffer_raw_ptrs[] = { m_vertex_buffer_ptr.get() };
 	const VkDeviceSize buffer_offsets[] = { 0 };

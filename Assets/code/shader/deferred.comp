@@ -2,32 +2,384 @@
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 
-layout( local_size_x = 8, local_size_y = 8, local_size_z = 1 ) in;
+#define PI 3.1415926535897932384626433832795
 
-layout(set = 0, binding = 0) uniform sampler2D texSampler[];
+struct MaterialTextureIndices
+{
+	uint albedo;
+	uint normal;
+	uint roughness;
+	uint metallic;
+};
 
-layout(set = 1, binding = 0) uniform sampler2D depth;
-layout(set = 1, binding = 1) uniform sampler2D tangentFrame;
-layout(set = 1, binding = 2) uniform sampler2D UVandDepthGradient;
-layout(set = 1, binding = 3) uniform sampler2D UVGradient;
-layout(set = 1, binding = 4) uniform usampler2D materialID;
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-layout(set = 2, binding = 0) uniform writeonly image2D outColor;
+layout(push_constant) uniform Constant
+{
+	vec2 RTSize;
+}constant;
+
+layout( constant_id = 0 ) const int SIZE = 10;
+layout( constant_id = 1 ) const int MAX_CLUSTER_NUM = 64;
+layout( constant_id = 2 ) const float NEAR_CLIP = 0.1;
+layout( constant_id = 3 ) const float FAR_CLIP = 35.0;
+layout( constant_id = 4 ) const uint NUM_X_TILES = 64;
+layout( constant_id = 5 ) const uint NUM_Y_TILES = 64;
+layout( constant_id = 6 ) const uint NUM_Z_TILES = 16;
+layout( constant_id = 7 ) const uint ELEMENTS_PER_CLUSTER = 2;
+layout( constant_id = 8 ) const uint TILE_SIZE = 16;
+
+//const int SIZE = 10;
+//const int MAX_CLUSTER_NUM = 64;
+//const float NEAR_CLIP = 0.1;
+//const float FAR_CLIP = 35.0;
+//const uint NUM_X_TILES = 64;
+//const uint NUM_Y_TILES = 64;
+//const uint NUM_Z_TILES = 16;
+//const uint ELEMENTS_PER_CLUSTER = 2;
+//const uint TILE_SIZE = 16;
+
+layout(set = 0, binding = 0) uniform Materials
+{
+	MaterialTextureIndices materialTextureIndices[SIZE];
+}materials;
+layout(set = 0, binding = 1) uniform sampler2D texSampler[];
+
+layout(set = 1, binding = 0) uniform MVP
+{
+	mat4 model;
+	mat4 view;
+	mat4 proj;
+} mvp;
+
+layout(set = 1, binding = 1) uniform SunLight
+{
+	vec3 SunDirectionWS;
+	vec3 SunIrradiance;
+}sunLight;
+
+layout(set = 1, binding = 2) uniform Camera
+{
+	vec3 CameraPosWS;
+}camera;
+
+layout(set = 1, binding = 3) buffer Picking
+{
+	vec3 Position;
+	vec3 Normal;
+}picking;
+
+layout(set = 1, binding = 4) uniform CursorDecal
+{
+	vec4 size;
+	float rotation;
+	float angleFade;
+	float intensity;
+	float albedo;
+	uint albedoTexIdx;
+	uint normalTexIdx;
+}cursorDecal;
+
+layout(set = 2, binding = 0) uniform sampler2D depthMap;
+layout(set = 2, binding = 1) uniform sampler2D tangentFrameMap;
+layout(set = 2, binding = 2) uniform sampler2D UVandDepthGradientMap;
+layout(set = 2, binding = 3) uniform sampler2D UVGradientMap;
+layout(set = 2, binding = 4) uniform usampler2D materialIDMap;
+
+layout(set = 3, binding = 0) uniform writeonly image2D outColor;
+
+struct Decal
+{
+	vec4 position;
+	vec4 normal;
+	vec4 size;
+	float rotation;
+	float angle_fade;
+	float intensity;
+	float albedo;
+	uint albedoTexIdx;
+	uint normalTexIdx;
+};
+
+layout(set = 4, binding = 0) uniform Decals
+{
+	Decal data[MAX_CLUSTER_NUM];
+}decals;
+
+layout(set = 5, binding = 0) buffer Cluster
+{
+	uint data[ELEMENTS_PER_CLUSTER * NUM_X_TILES * NUM_Y_TILES * NUM_Z_TILES];
+}cluster;
+
+vec4 UnpackQuaternion(vec4 q)
+{
+	q.xyz = q.xyz * 2.0f - 1.0f;
+	q.w = sqrt(1.0f - clamp(
+		q.x * q.x + q.y * q.y + q.z * q.z,
+		0.0f,
+		1.0f));
+
+	return q;
+}
+
+mat3 QuatTo3x3(vec4 q)
+{
+	vec3 x = vec3(
+		1.0f - 2.0f * q.y * q.y - 2.0f * q.z * q.z,
+		2.0f * q.x * q.y + 2.0f * q.z * q.w,
+		2.0f * q.x * q.z - 2.0f * q.y * q.w);
+
+	vec3 y = vec3(
+		2.0f * q.x * q.y - 2.0f * q.z * q.w,
+		1.0f - 2.0f * q.x * q.x - 2.0f * q.z * q.z,
+		2.0f * q.y * q.z + 2.0f * q.x * q.w);
+
+	vec3 z = vec3(
+		2.0f * q.x * q.z + 2.0f * q.y * q.w,
+		2.0f * q.y * q.z - 2.0f * q.x * q.w,
+		1.0f - 2.0f * q.x * q.x - 2.0f * q.y * q.y);
+
+	return mat3(x,y,z);
+}
+
+
+//-------------------------------------------------------------------------------------------------
+// Calculates the Fresnel factor using Schlick's approximation
+//-------------------------------------------------------------------------------------------------
+vec3 Fresnel(vec3 specAlbedo, vec3 h, vec3 l)
+{
+	vec3 fresnel = specAlbedo + (1.0f - specAlbedo) * pow((1.0f - clamp(dot(l, h), 0.0, 1.0)), 5.0f);
+
+	// Fade out spec entirely when lower than 0.1% albedo
+	fresnel *= clamp(dot(specAlbedo, vec3(333.0f)), 0.0, 1.0);
+
+	return fresnel;
+}
+
+//-------------------------------------------------------------------------------------------------
+// Helper for computing the GGX visibility term
+//-------------------------------------------------------------------------------------------------
+float GGX_V1(in float m2, in float nDotX)
+{
+	return 1.0f / (nDotX + sqrt(m2 + (1 - m2) * nDotX * nDotX));
+}
+
+//-------------------------------------------------------------------------------------------------
+// Computes the GGX visibility term
+//-------------------------------------------------------------------------------------------------
+float GGXVisibility(in float m2, in float nDotL, in float nDotV)
+{
+	return GGX_V1(m2, nDotL) * GGX_V1(m2, nDotV);
+}
+
+//-------------------------------------------------------------------------------------------------
+// Computes the specular term using a GGX microfacet distribution, with a matching
+// geometry factor and visibility term. Based on "Microfacet Models for Refraction Through
+// Rough Surfaces" [Walter 07]. m is roughness, n is the surface normal, h is the half vector,
+// l is the direction to the light source, and specAlbedo is the RGB specular albedo
+//-------------------------------------------------------------------------------------------------
+float GGX_Specular(float m, vec3 n, in vec3 h, in vec3 v, vec3 l)
+{
+	float nDotH = clamp(dot(n, h), 0.0, 1.0);
+	float nDotL = clamp(dot(n, l), 0.0, 1.0);
+	float nDotV = clamp(dot(n, v), 0.0, 1.0);
+
+
+	// Calculate the distribution term
+	float m2 = m * m;
+	float d = m2 / (PI * pow(nDotH * nDotH * (m2 - 1) + 1, 2.0f));
+
+	return d * GGXVisibility(m2, nDotL, nDotV);
+}
+
+//-------------------------------------------------------------------------------------------------
+// Calculates the lighting result for an analytical light source
+//-------------------------------------------------------------------------------------------------
+vec3 CalcLighting(vec3 normal, vec3 lightDir, vec3 peakIrradiance,
+					vec3 diffuseAlbedo, vec3 specularAlbedo, float roughness,
+					vec3 positionWS, vec3 cameraPosWS)
+{
+	vec3 lighting = diffuseAlbedo * (1.0f / PI);
+
+	vec3 view = normalize(cameraPosWS - positionWS);
+	const float nDotL = clamp(dot(normal, lightDir),0.0,1.0);
+
+	vec3 fresnel = vec3(1.0f,0.0f,0.0f);
+	if(nDotL > 0.0f)
+	{
+		vec3 h = normalize(view + lightDir);
+		fresnel = Fresnel(specularAlbedo, h, lightDir);
+
+		float specular = GGX_Specular(roughness, normal, h, view, lightDir);
+		lighting += specular * fresnel;
+	}
+
+	return (lighting * nDotL) * peakIrradiance;
+}
+
+//-------------------------------------------------------------------------------------------------
+// Computes world-space position from post-projection depth
+//-------------------------------------------------------------------------------------------------
+vec3 PositionFromDepth(float depth, vec2 uv)
+{
+	vec4 positionCS = vec4(uv * 2.0f - 1.0f, depth, 1.0f);
+	vec4 positionWS = inverse(mvp.proj * mvp.view) * positionCS;
+	return positionWS.xyz / positionWS.w;
+}
+
+//-------------------------------------------------------------------------------------------------
+// Computes decal's orientation from its normal
+//-------------------------------------------------------------------------------------------------
+mat3 OrientationFromNormal(vec3 normal)
+{
+	vec3 forward = -normal;
+	vec3 up = abs(dot(forward, vec3(0.0f, 1.0f, 0.0f))) < 0.99f ? vec3(0.0f, 1.0f, 0.0f) : vec3(0.0f, 0.0f, 1.0f);
+	vec3 right = normalize(cross(up, forward));
+	up = cross(forward, right);
+	return mat3(right, up, forward);
+}
 
 void main()
 {
 	const ivec2 pixelPos = ivec2(gl_GlobalInvocationID.xy);
-	vec2 texCoord = texelFetch(UVandDepthGradient, pixelPos, 0).xy * 2.0000f;
-	uint packedMaterialID = texelFetch(materialID, pixelPos, 0).x;
-	uint materialID = packedMaterialID & 0x7F;
+	uint packedMaterialID = texelFetch(materialIDMap, pixelPos, 0).x;
+	uint materialID = packedMaterialID & 0x3F;
 
-	if(materialID == 0)
+	if(packedMaterialID == 255)
 	{
-		imageStore(outColor, pixelPos, vec4(0.0f, 0.0f, 0.0f, 1.0f));
+		imageStore(outColor, pixelPos, vec4(0.2f, 0.2f, 0.3f, 0.5f));
 	}
 	else
 	{
-		imageStore(outColor, pixelPos, texture(texSampler[materialID], texCoord));
+		MaterialTextureIndices indices = materials.materialTextureIndices[materialID];
+
+		vec4 tangentFrame = UnpackQuaternion(texelFetch(tangentFrameMap, pixelPos, 0));
+		float wsign = (packedMaterialID & 0x40) == 0 ? 1.0f : -1.0f;
+		tangentFrame.w *= wsign;
+
+		mat3 tangentFrameMatrix = QuatTo3x3(tangentFrame);
+		float handedness = (packedMaterialID & 0x80) == 0 ? 1.0f : -1.0f;
+		tangentFrameMatrix[1] *= handedness;
+
+		vec2 invRTSize = 1.0f / constant.RTSize;
+		vec2 screenUV = (pixelPos + 0.5f) * invRTSize;
+		float depth = texelFetch(depthMap, pixelPos, 0).x;
+		vec3 positionWS = PositionFromDepth(depth ,screenUV);
+
+		vec2 texCoord = texelFetch(UVandDepthGradientMap, pixelPos, 0).xy * 2.0000f;
+		vec4 uvGradients = texelFetch(UVGradientMap, pixelPos, 0);
+		vec2 uvDX = uvGradients.xy;
+		vec2 uvDY = uvGradients.zw;
+
+		vec3 normalTS;
+		normalTS.xy = textureGrad(texSampler[indices.normal], texCoord, uvDX, uvDY).xy * 2.0f - 1.0f;
+		normalTS.z = sqrt(1.0f - clamp(normalTS.x * normalTS.x + normalTS.y * normalTS.y, 0.0f, 1.0f));
+		vec3 normalWS = clamp(tangentFrameMatrix * normalTS, 0.0f, 1.0f);
+		
+		float roughness = textureGrad(texSampler[indices.roughness], texCoord, uvDX, uvDY).x;
+		float metallic = textureGrad(texSampler[indices.metallic], texCoord, uvDX, uvDY).x;
+		vec3 albedo = textureGrad(texSampler[indices.albedo], texCoord, uvDX, uvDY).xyz;
+		vec3 diffuseAlbedo = mix(albedo.xyz, vec3(0.0f, 0.0f, 0.0f), metallic);
+		vec3 specularAlbedo = mix(vec3(0.03f, 0.03f, 0.03f), albedo.xyz, metallic);
+
+
+
+
+
+		//场景贴花
+		float linearDepth = mvp.proj[3][2] / (-mvp.proj[2][2] - depth);
+		//等价于:
+		//float linearDepth = (mvp.view * vec4(positionWS,1.0f)).z;
+		float normalizedZ = clamp((-linearDepth - NEAR_CLIP) / (FAR_CLIP - NEAR_CLIP), 0.0f, 1.0f);
+		uint zTile = uint(normalizedZ * NUM_Z_TILES);
+		uvec3 tileCoords = uvec3(pixelPos / TILE_SIZE, zTile);
+		uint clusterIdx = (tileCoords.z * NUM_X_TILES * NUM_Y_TILES) + (tileCoords.y * NUM_X_TILES) + tileCoords.x;
+		uint clusterOffset = clusterIdx * ELEMENTS_PER_CLUSTER;
+
+		for(uint elemIdx = 0; elemIdx < ELEMENTS_PER_CLUSTER; elemIdx++)
+		{
+			uint clusterElemMask = cluster.data[elemIdx + clusterOffset];
+			
+			for(uint bitIdx = 0; bitIdx < 32; bitIdx++)
+			{
+				if((clusterElemMask & (1 << bitIdx)) == 0)continue;
+
+				uint decalIdx = bitIdx + (elemIdx * 32);
+				Decal decal = decals.data[decalIdx];
+				mat3 decalRot = OrientationFromNormal(decal.normal.xyz);
+
+				vec3 localPos = positionWS - decal.position.xyz;
+				localPos = transpose(decalRot) * localPos;
+				localPos = mat3(cos(decal.rotation), sin(decal.rotation), 0,
+								-sin(decal.rotation),cos(decal.rotation), 0,
+								0, 0, 1) * localPos;
+				vec3 decalUVW = localPos / decal.size.xyz;
+				decalUVW.y *= -1.0f;
+
+				if(decalUVW.x >= -1.0f && decalUVW.x <= 1.0f &&
+				   decalUVW.y >= -1.0f && decalUVW.y <= 1.0f &&
+				   decalUVW.z >= -1.0f && decalUVW.z <= 1.0f &&
+				   dot(decal.normal.xyz, tangentFrameMatrix[2]) > decal.angle_fade)
+				{
+					vec2 decalUV = clamp((decalUVW.xy * 0.5f + 0.5f), 0.0f, 1.0f);
+
+					vec4 decalAlbedo = texture(texSampler[decal.albedoTexIdx], decalUV);
+					vec3 blend = vec3(decalAlbedo.w * decal.intensity);
+					diffuseAlbedo = mix(diffuseAlbedo, decalAlbedo.xyz * decal.albedo, blend);
+
+					vec3 decalNormalTS = texture(texSampler[decal.normalTexIdx], decalUV).xyz;
+					decalNormalTS = decalNormalTS * 2.0f - 1.0f;
+					decalNormalTS.z *= -1.0f;
+					vec3 decalNormalWS = decalRot * decalNormalTS;
+					normalWS = mix(normalWS, decalNormalWS, blend);
+				}
+			}
+		}
+
+
+
+
+
+
+		//鼠标贴花
+		mat3 orientation = OrientationFromNormal(picking.Normal);
+		vec3 localPos = positionWS - picking.Position;
+		localPos = transpose(orientation) * localPos;
+
+		localPos = mat3(cos(cursorDecal.rotation), sin(cursorDecal.rotation), 0,
+						-sin(cursorDecal.rotation),cos(cursorDecal.rotation), 0,
+						0, 0, 1) * localPos;
+		vec3 decalUVW = localPos / cursorDecal.size.xyz;
+		decalUVW.y *= -1.0f;
+
+		if(decalUVW.x >= -1.0f && decalUVW.x <= 1.0f &&
+		   decalUVW.y >= -1.0f && decalUVW.y <= 1.0f &&
+		   decalUVW.z >= -1.0f && decalUVW.z <= 1.0f &&
+		   dot(picking.Normal, tangentFrameMatrix[2]) > cursorDecal.angleFade)
+		{
+			vec2 decalUV = clamp(decalUVW.xy * 0.5f + 0.5f, 0.0f, 1.0f);
+
+			vec4 decalAlbedo = texture(texSampler[cursorDecal.albedoTexIdx], decalUV);
+			vec3 blend = vec3(decalAlbedo.w * cursorDecal.intensity);
+			diffuseAlbedo = mix(diffuseAlbedo, decalAlbedo.xyz * cursorDecal.albedo, blend);
+
+			vec3 decalNormalTS = texture(texSampler[cursorDecal.normalTexIdx], decalUV).xyz;
+			decalNormalTS = decalNormalTS * 2.0f - 1.0f;
+			decalNormalTS.z *= -1.0f;
+			vec3 decalNormalWS = orientation * decalNormalTS;
+			normalWS = mix(normalWS, decalNormalWS, blend);
+		}
+
+
+
+
+		//输出最终颜色
+		vec3 color = CalcLighting(normalWS, sunLight.SunDirectionWS, sunLight.SunIrradiance, diffuseAlbedo, 
+			specularAlbedo, roughness * roughness, positionWS, camera.CameraPosWS);
+
+		imageStore(outColor, pixelPos,vec4(color,1.0f));
+
 	}
 	
+
 }

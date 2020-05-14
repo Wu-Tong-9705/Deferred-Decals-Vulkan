@@ -587,19 +587,22 @@ bool Anvil::Buffer::init_staging_buffer(const VkDeviceSize& in_size,
 /* Please see header for specification */
 bool Anvil::Buffer::read(VkDeviceSize in_start_offset,
                          VkDeviceSize in_size,
-                         void*        out_result_ptr)
+                         void*        out_result_ptr,
+                         Anvil::Queue* in_opt_queue_ptr)
 {
     return read(in_start_offset,
                 in_size,
                 UINT32_MAX, /* in_device_mask */
-                out_result_ptr);
+                out_result_ptr,
+                in_opt_queue_ptr);
 }
 
 /* Please see header for specification */
 bool Anvil::Buffer::read(VkDeviceSize in_start_offset,
                          VkDeviceSize in_size,
                          uint32_t     in_device_mask,
-                         void*        out_result_ptr)
+                         void*        out_result_ptr,
+                         Anvil::Queue* in_opt_queue_ptr)
 {
     const Anvil::DeviceType device_type      (m_device_ptr->get_type() );
     auto                    memory_block_ptr (get_memory_block(0 /* in_n_memory_block */) );
@@ -631,7 +634,7 @@ bool Anvil::Buffer::read(VkDeviceSize in_start_offset,
             m_staging_buffer_ptr->get_create_info_ptr()->get_size() <  in_size)
         {
             if (!init_staging_buffer(in_size,
-                                     nullptr) ) /* in_opt_queue_ptr */
+                                     in_opt_queue_ptr) ) /* in_opt_queue_ptr */
             {
                 result = false;
 

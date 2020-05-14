@@ -136,6 +136,14 @@ namespace Anvil
         }
     } OnMouseMoveCallbackArgument;
 
+    typedef struct OnMouseButtonCallbackArgument : public Anvil::CallbackArgument
+    {
+        explicit OnMouseButtonCallbackArgument()
+        {
+            /* Stub */
+        }
+    } OnMouseButtonCallbackArgument;
+
     typedef struct OnMouseWheelCallbackArgument : public Anvil::CallbackArgument
     {
         short wheel_offset;

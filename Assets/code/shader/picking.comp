@@ -1,0 +1,72 @@
+#version 450
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+
+#define PI 3.1415926535897932384626433832795
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(push_constant) uniform Constant
+{
+	vec2 RTSize;
+}constant;
+
+layout(set = 0, binding = 0) buffer Picking
+{
+	vec3 Position;
+	vec3 Normal;
+}picking;
+
+layout(set = 0, binding = 1) uniform Camera
+{
+	vec3 CameraPosWS;
+}camera;
+
+layout(set = 0, binding = 2) uniform sampler2D depthMap;
+layout(set = 0, binding = 3) uniform sampler2D tangentFrameMap;
+layout(set = 0, binding = 4) uniform usampler2D materialIDMap;
+
+layout(set = 1, binding = 0) uniform MVP 
+{
+	mat4 model;
+	mat4 view;
+	mat4 proj;
+} mvp;
+
+vec4 UnpackQuaternion(vec4 q)
+{
+	q.xyz = q.xyz * 2.0f - 1.0f;
+	q.w = sqrt(1.0f - clamp(
+		q.x * q.x + q.y * q.y + q.z * q.z,
+		0.0f,
+		1.0f));
+
+	return q;
+}
+
+vec3 QuatRotate(vec3 v, vec4 q)
+{
+	vec3 t = 2 * cross(q.xyz, v);
+	return v + q.w * t + cross(q.xyz, t);
+}
+
+
+void main()
+{
+	const ivec2 PixelPos = ivec2(constant.RTSize / 2);
+	float depth = texelFetch(depthMap, PixelPos, 0).x;
+
+	uint packedMaterialID = texelFetch(materialIDMap, PixelPos, 0).x;
+	float wsign = (packedMaterialID & 0x40) == 0 ? 1.0f : -1.0f;
+	vec4 tangentFrame = UnpackQuaternion(texelFetch(tangentFrameMap, PixelPos, 0));
+	tangentFrame.w *= wsign;
+
+	vec2 uv = (PixelPos + 0.5f) / constant.RTSize;
+	uv = uv * 2.0f - 1.0f;
+	vec4 positionWS =  inverse(mvp.proj * mvp.view) * vec4(uv, depth, 1.0f);
+	
+	vec3 normal = normalize(QuatRotate(vec3(0.0f, 0.0f, 1.0f), tangentFrame));
+
+	picking.Position =  positionWS.xyz / positionWS.w;
+	picking.Normal = normal;
+}

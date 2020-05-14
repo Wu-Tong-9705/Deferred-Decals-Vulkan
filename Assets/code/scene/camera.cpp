@@ -23,9 +23,43 @@ Camera::Camera(float posX, float posY, float posZ, float upX, float upY, float u
 	updateCameraVectors();
 }
 
+vec3 Camera::GetCameraWorldPos()
+{
+	return m_position;
+}
+
+mat3 Camera::GetCameraWorldOrientation()
+{
+	mat3 orientation;
+	for (int i = 0; i < 3; i++)
+	{
+		for (int j = 0; j < 3; j++)
+		{
+			orientation[i][j] = m_viewM[i][j];
+		}
+	}
+
+	return inverse(orientation);
+}
+
+float Camera::GetNearZ()
+{
+	return m_near_z;
+}
+
+float Camera::GetFarZ()
+{
+	return m_far_z;
+}
+vec3 Camera::GetNearZCenterWorldPos()
+{
+	return m_position + m_near_z * m_front;
+}
+
 mat4 Camera::GetViewMatrix()
 {
-	return lookAt(m_position, m_position + m_front, m_up);
+	m_viewM = lookAt(m_position, m_position + m_front, m_up);
+	return m_viewM;
 }
 
 mat4 Camera::GetProjMatrix()
