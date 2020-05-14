@@ -20,13 +20,18 @@ layout(set = 0, binding = 0) buffer Picking
 layout(set = 0, binding = 1) uniform Camera
 {
 	vec3 CameraPosWS;
-	mat4 InvViewProj;
 }camera;
 
 layout(set = 0, binding = 2) uniform sampler2D depthMap;
 layout(set = 0, binding = 3) uniform sampler2D tangentFrameMap;
 layout(set = 0, binding = 4) uniform usampler2D materialIDMap;
 
+layout(set = 1, binding = 0) uniform MVP 
+{
+	mat4 model;
+	mat4 view;
+	mat4 proj;
+} mvp;
 
 vec4 UnpackQuaternion(vec4 q)
 {
@@ -58,7 +63,7 @@ void main()
 
 	vec2 uv = (PixelPos + 0.5f) / constant.RTSize;
 	uv = uv * 2.0f - 1.0f;
-	vec4 positionWS =  camera.InvViewProj * vec4(uv, depth, 1.0f);
+	vec4 positionWS =  inverse(mvp.proj * mvp.view) * vec4(uv, depth, 1.0f);
 	
 	vec3 normal = normalize(QuatRotate(vec3(0.0f, 0.0f, 1.0f), tangentFrame));
 

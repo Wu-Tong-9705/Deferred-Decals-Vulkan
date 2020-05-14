@@ -22,17 +22,17 @@ struct MVPUniform
 struct IndexUniform
 {
     uint decalIndices[N_MAX_STORED_DECALS];
-    uint numIntersectingDecals = 0;
+    uint numIntersectingDecals;
 };
 
 struct ZBoundsUniform
 {
-    uvec2 ZBpunds[N_MAX_STORED_DECALS];
+    uvec2 ZBounds[N_MAX_STORED_DECALS];
 };
 
 struct ClusterStorage
 {
-    uint data[N_MAX_STORED_DECALS / 32 * NUM_X_TILES * NUM_Y_TILES * NUM_Z_TILES];
+    uint data[N_MAX_STORED_DECALS / 32 * ((1920 + Tile_Size - 1) / Tile_Size) * ((1080 + Tile_Size - 1) / Tile_Size) * NUM_Z_TILES];
 };
 
 struct SunLightUniform
@@ -44,7 +44,6 @@ struct SunLightUniform
 struct CameraUniform
 {
     vec3 CameraPosWS;
-    mat4 InvViewProj;
 };
 
 struct PickingStorage
@@ -230,5 +229,7 @@ private:
     Format m_depth_format;
     int m_n_decal;
     DeferredConstants m_deferred_constants;
+    int m_num_x_tiles;
+    int m_num_y_tiles;
     #pragma endregion
 };

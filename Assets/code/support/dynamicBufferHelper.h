@@ -12,12 +12,12 @@ const uint64_t ALIGNMENT = 256;
 template<typename T> class DynamicBufferHelper
 {
 private:
-	BufferUniquePtr           m_uniform_buffer_ptr;
+	BufferUniquePtr           m_buffer_ptr;
 	VkDeviceSize              m_size_per_swapchain_image;
 	VkDeviceSize              m_size_total;
 
 public:
-	DynamicBufferHelper(BaseDevice* device, string name)
+	DynamicBufferHelper(BaseDevice* device, string name, bool isUniform = true)
 	{
 		auto allocator_ptr = MemoryAllocator::create_oneshot(device);
 
@@ -30,18 +30,18 @@ public:
 			QueueFamilyFlagBits::GRAPHICS_BIT,
 			SharingMode::EXCLUSIVE,
 			BufferCreateFlagBits::NONE,
-			BufferUsageFlagBits::UNIFORM_BUFFER_BIT);
-		m_uniform_buffer_ptr = Buffer::create(move(create_info_ptr));
-		m_uniform_buffer_ptr->set_name(name + "unfiorm buffer");
+			isUniform ? BufferUsageFlagBits::UNIFORM_BUFFER_BIT : BufferUsageFlagBits::STORAGE_BUFFER_BIT);
+		m_buffer_ptr = Buffer::create(move(create_info_ptr));
+		m_buffer_ptr->set_name(name + (isUniform ? " unfiorm " : " storage ") + "buffer");
 
 		allocator_ptr->add_buffer(
-			m_uniform_buffer_ptr.get(),
+			m_buffer_ptr.get(),
 			MemoryFeatureFlagBits::NONE); /* in_required_memory_features */
 	}
 
 	void update(Queue* queue_ptr, T* data, int n)
 	{
-		m_uniform_buffer_ptr->write(
+		m_buffer_ptr->write(
 			n * m_size_per_swapchain_image, /* start_offset */
 			sizeof(T),
 			data,
@@ -50,12 +50,12 @@ public:
 
 	~DynamicBufferHelper()
 	{
-		m_uniform_buffer_ptr.reset();
+		m_buffer_ptr.reset();
 	}
 
-	Buffer* getUniform()
+	Buffer* getBuffer()
 	{
-		return m_uniform_buffer_ptr.get();
+		return m_buffer_ptr.get();
 	}
 
 	VkDeviceSize getSizePerSwapchainImage()

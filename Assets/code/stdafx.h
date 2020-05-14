@@ -155,6 +155,7 @@ struct Decal
     alignas(16) vec3 position;
     alignas(16) vec3 normal;
     alignas(16) vec3 size;
+    alignas(4) float rotation;
     alignas(4) float angle_fade;
     alignas(4) float intensity;
     alignas(4) float albedo;
@@ -166,6 +167,7 @@ struct Decal
         this->position = position;
         this->normal = normal;
         size = cursorDecal.size;
+        rotation = cursorDecal.rotation;
         angle_fade = cursorDecal.angle_fade;
         intensity = cursorDecal.intensity;
         albedo = cursorDecal.albedo;
@@ -185,7 +187,6 @@ struct BoundingOrientedBox
 //core
 #define N_SWAPCHAIN_IMAGES (3)
 #define N_MAX_STORED_DECALS (64)
-#define NUM_X_TILES (16)
-#define NUM_Y_TILES (16)
 #define NUM_Z_TILES (16)
+#define Tile_Size (16)
 #include "core/engine.h"
