@@ -4,7 +4,7 @@
 #include "../support/input.h"
 #include "../scene/model.h"
 #include "support/dynamicBufferHelper.h"
-#include "appSettings.h"
+#include "decalSettings.h"
 
 #pragma region struct
 struct DeferredConstants
@@ -121,10 +121,10 @@ private:
     #pragma endregion
 
     #pragma region callback
-    void on_validation_callback(Anvil::DebugMessageSeverityFlags in_severity,
-        const char* in_message_ptr);
+    void on_validation_callback(Anvil::DebugMessageSeverityFlags in_severity, const char* in_message_ptr);
     void mouse_move_callback(CallbackArgument* argumentPtr);
-    void mouse_click_callback(CallbackArgument* argumentPtr);
+    void mouse_click_LButton_callback(CallbackArgument* argumentPtr);
+    void mouse_click_RButton_callback(CallbackArgument* argumentPtr);
     void scroll_callback(CallbackArgument* argumentPtr);
     void key_press_callback(CallbackArgument* argumentPtr);
     void key_release_callback(CallbackArgument* argumentPtr);
@@ -156,7 +156,7 @@ private:
     shared_ptr<Camera>        m_camera;
     shared_ptr<Key>           m_key;
     shared_ptr<Mouse>         m_mouse;
-    AppSettings               m_appsettings;
+    DecalSettings             m_decal_settings;
     #pragma endregion
 
     #pragma region image
@@ -195,7 +195,7 @@ private:
     DynamicBufferHelper<MVPUniform>*        m_mvp_dynamic_buffer_helper;
     DynamicBufferHelper<SunLightUniform>*   m_sunLight_dynamic_buffer_helper;
     DynamicBufferHelper<CameraUniform>*     m_camera_dynamic_buffer_helper;
-    DynamicBufferHelper<CursorDecal>*       m_cursor_decal_dynamic_buffer_helper;
+    DynamicBufferHelper<DecalSettingUniform>*       m_cursor_decal_dynamic_buffer_helper;
     IndexUniform                            m_indexUniform;
     DynamicBufferHelper<IndexUniform>*      m_decal_indices_dynamic_buffer_helper;
     ZBoundsUniform                          m_zBoundsUniform;

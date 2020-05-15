@@ -77,8 +77,11 @@ namespace Anvil
         KEY_ID_C = 67,
 
         KEY_ID_R = 82,
+        KEY_ID_BACKSPACE = 8,
+        KEY_ID_DELETE = 46,
 
         KEY_ID_TAB = 9,
+        KEY_ID_TAB_TYPE = 192,
         KEY_ID_CTRL = 17,
 
         KEY_ID_1 = 49, 
@@ -88,7 +91,9 @@ namespace Anvil
         KEY_ID_5, 
         KEY_ID_6, 
         KEY_ID_7, 
-        KEY_ID_8, 
+        KEY_ID_8
+
+
 
 #endif
 #else

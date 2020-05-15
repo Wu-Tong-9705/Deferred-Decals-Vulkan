@@ -50,7 +50,7 @@ layout(set = 1, binding = 0) uniform MVP
 	mat4 model;
 	mat4 view;
 	mat4 proj;
-} mvp;
+}mvp;
 
 layout(set = 1, binding = 1) uniform SunLight
 {
@@ -69,7 +69,7 @@ layout(set = 1, binding = 3) buffer Picking
 	vec3 Normal;
 }picking;
 
-layout(set = 1, binding = 4) uniform CursorDecal
+layout(set = 1, binding = 4) uniform DecalSettings
 {
 	vec4 size;
 	float rotation;
@@ -78,7 +78,9 @@ layout(set = 1, binding = 4) uniform CursorDecal
 	float albedo;
 	uint albedoTexIdx;
 	uint normalTexIdx;
-}cursorDecal;
+	uint isShowCursor;
+	uint isShowAllDecals;
+}decalSettings;
 
 layout(set = 2, binding = 0) uniform sampler2D depthMap;
 layout(set = 2, binding = 1) uniform sampler2D tangentFrameMap;
@@ -287,54 +289,66 @@ void main()
 
 
 		//场景贴花
-		float linearDepth = mvp.proj[3][2] / (-mvp.proj[2][2] - depth);
-		//等价于:
-		//float linearDepth = (mvp.view * vec4(positionWS,1.0f)).z;
-		float normalizedZ = clamp((-linearDepth - NEAR_CLIP) / (FAR_CLIP - NEAR_CLIP), 0.0f, 1.0f);
-		uint zTile = uint(normalizedZ * NUM_Z_TILES);
-		uvec3 tileCoords = uvec3(pixelPos / TILE_SIZE, zTile);
-		uint clusterIdx = (tileCoords.z * NUM_X_TILES * NUM_Y_TILES) + (tileCoords.y * NUM_X_TILES) + tileCoords.x;
-		uint clusterOffset = clusterIdx * ELEMENTS_PER_CLUSTER;
-
-		for(uint elemIdx = 0; elemIdx < ELEMENTS_PER_CLUSTER; elemIdx++)
+		if(decalSettings.isShowAllDecals != 0)
 		{
-			uint clusterElemMask = cluster.data[elemIdx + clusterOffset];
-			
-			for(uint bitIdx = 0; bitIdx < 32; bitIdx++)
+			float linearDepth = mvp.proj[3][2] / (-mvp.proj[2][2] - depth);
+			//等价于:
+			//float linearDepth = (mvp.view * vec4(positionWS,1.0f)).z;
+			float normalizedZ = clamp((-linearDepth - NEAR_CLIP) / (FAR_CLIP - NEAR_CLIP), 0.0f, 1.0f);
+			uint zTile = uint(normalizedZ * NUM_Z_TILES);
+			uvec3 tileCoords = uvec3(pixelPos / TILE_SIZE, zTile);
+			uint clusterIdx = (tileCoords.z * NUM_X_TILES * NUM_Y_TILES) + (tileCoords.y * NUM_X_TILES) + tileCoords.x;
+			uint clusterOffset = clusterIdx * ELEMENTS_PER_CLUSTER;
+
+			for(uint elemIdx = 0; elemIdx < ELEMENTS_PER_CLUSTER; elemIdx++)
 			{
-				if((clusterElemMask & (1 << bitIdx)) == 0)continue;
-
-				uint decalIdx = bitIdx + (elemIdx * 32);
-				Decal decal = decals.data[decalIdx];
-				mat3 decalRot = OrientationFromNormal(decal.normal.xyz);
-
-				vec3 localPos = positionWS - decal.position.xyz;
-				localPos = transpose(decalRot) * localPos;
-				localPos = mat3(cos(decal.rotation), sin(decal.rotation), 0,
-								-sin(decal.rotation),cos(decal.rotation), 0,
-								0, 0, 1) * localPos;
-				vec3 decalUVW = localPos / decal.size.xyz;
-				decalUVW.y *= -1.0f;
-
-				if(decalUVW.x >= -1.0f && decalUVW.x <= 1.0f &&
-				   decalUVW.y >= -1.0f && decalUVW.y <= 1.0f &&
-				   decalUVW.z >= -1.0f && decalUVW.z <= 1.0f &&
-				   dot(decal.normal.xyz, tangentFrameMatrix[2]) > decal.angle_fade)
+				uint clusterElemMask = cluster.data[elemIdx + clusterOffset];
+			
+				for(uint bitIdx = 0; bitIdx < 32; bitIdx++)
 				{
-					vec2 decalUV = clamp((decalUVW.xy * 0.5f + 0.5f), 0.0f, 1.0f);
+					if((clusterElemMask & (1 << bitIdx)) == 0)continue;
 
-					vec4 decalAlbedo = texture(texSampler[decal.albedoTexIdx], decalUV);
-					vec3 blend = vec3(decalAlbedo.w * decal.intensity);
-					diffuseAlbedo = mix(diffuseAlbedo, decalAlbedo.xyz * decal.albedo, blend);
+					uint decalIdx = bitIdx + (elemIdx * 32);
+					Decal decal = decals.data[decalIdx];
+					mat3 decalRot = OrientationFromNormal(decal.normal.xyz);
 
-					vec3 decalNormalTS = texture(texSampler[decal.normalTexIdx], decalUV).xyz;
-					decalNormalTS = decalNormalTS * 2.0f - 1.0f;
-					decalNormalTS.z *= -1.0f;
-					vec3 decalNormalWS = decalRot * decalNormalTS;
-					normalWS = mix(normalWS, decalNormalWS, blend);
+					vec3 localPos = positionWS - decal.position.xyz;
+					localPos = transpose(decalRot) * localPos;
+					localPos = mat3(cos(decal.rotation), sin(decal.rotation), 0,
+									-sin(decal.rotation),cos(decal.rotation), 0,
+									0, 0, 1) * localPos;
+					vec3 decalUVW = localPos / decal.size.xyz;
+					decalUVW.y *= -1.0f;
+
+					if(decalUVW.x >= -1.0f && decalUVW.x <= 1.0f &&
+					   decalUVW.y >= -1.0f && decalUVW.y <= 1.0f &&
+					   decalUVW.z >= -1.0f && decalUVW.z <= 1.0f &&
+					   dot(decal.normal.xyz, tangentFrameMatrix[2]) > decal.angle_fade)
+					{
+						vec2 decalUV = clamp((decalUVW.xy * 0.5f + 0.5f), 0.0f, 1.0f);
+
+						vec3 blend;
+
+						if(decal.albedoTexIdx !=100)
+						{
+							vec4 decalAlbedo = texture(texSampler[decal.albedoTexIdx], decalUV);
+							blend = vec3(decalAlbedo.w * decal.intensity);
+							diffuseAlbedo = mix(diffuseAlbedo, decalAlbedo.xyz * decal.albedo, blend);
+						}
+						else
+						{
+							blend = vec3(decal.intensity);
+						}
+						vec4 decalNormalTS = texture(texSampler[decal.normalTexIdx], decalUV);
+						decalNormalTS.xyz = decalNormalTS.xyz * 2.0f - 1.0f;
+						decalNormalTS.z *= -1.0f;
+						vec3 decalNormalWS = decalRot * decalNormalTS.xyz;
+						if(decalNormalTS.w != 0.0f) normalWS = mix(normalWS, decalNormalWS, blend);
+					}
 				}
-			}
+			}		
 		}
+
 
 
 
@@ -342,33 +356,45 @@ void main()
 
 
 		//鼠标贴花
-		mat3 orientation = OrientationFromNormal(picking.Normal);
-		vec3 localPos = positionWS - picking.Position;
-		localPos = transpose(orientation) * localPos;
-
-		localPos = mat3(cos(cursorDecal.rotation), sin(cursorDecal.rotation), 0,
-						-sin(cursorDecal.rotation),cos(cursorDecal.rotation), 0,
-						0, 0, 1) * localPos;
-		vec3 decalUVW = localPos / cursorDecal.size.xyz;
-		decalUVW.y *= -1.0f;
-
-		if(decalUVW.x >= -1.0f && decalUVW.x <= 1.0f &&
-		   decalUVW.y >= -1.0f && decalUVW.y <= 1.0f &&
-		   decalUVW.z >= -1.0f && decalUVW.z <= 1.0f &&
-		   dot(picking.Normal, tangentFrameMatrix[2]) > cursorDecal.angleFade)
+		if(decalSettings.isShowCursor != 0)
 		{
-			vec2 decalUV = clamp(decalUVW.xy * 0.5f + 0.5f, 0.0f, 1.0f);
+			mat3 orientation = OrientationFromNormal(picking.Normal);
+			vec3 localPos = positionWS - picking.Position;
+			localPos = transpose(orientation) * localPos;
 
-			vec4 decalAlbedo = texture(texSampler[cursorDecal.albedoTexIdx], decalUV);
-			vec3 blend = vec3(decalAlbedo.w * cursorDecal.intensity);
-			diffuseAlbedo = mix(diffuseAlbedo, decalAlbedo.xyz * cursorDecal.albedo, blend);
+			localPos = mat3(cos(decalSettings.rotation), sin(decalSettings.rotation), 0,
+							-sin(decalSettings.rotation),cos(decalSettings.rotation), 0,
+							0, 0, 1) * localPos;
+			vec3 decalUVW = localPos / decalSettings.size.xyz;
+			decalUVW.y *= -1.0f;
 
-			vec3 decalNormalTS = texture(texSampler[cursorDecal.normalTexIdx], decalUV).xyz;
-			decalNormalTS = decalNormalTS * 2.0f - 1.0f;
-			decalNormalTS.z *= -1.0f;
-			vec3 decalNormalWS = orientation * decalNormalTS;
-			normalWS = mix(normalWS, decalNormalWS, blend);
+			if(decalUVW.x >= -1.0f && decalUVW.x <= 1.0f &&
+			   decalUVW.y >= -1.0f && decalUVW.y <= 1.0f &&
+			   decalUVW.z >= -1.0f && decalUVW.z <= 1.0f &&
+			   dot(picking.Normal, tangentFrameMatrix[2]) > decalSettings.angleFade)
+			{
+				vec2 decalUV = clamp(decalUVW.xy * 0.5f + 0.5f, 0.0f, 1.0f);
+
+				vec3 blend;
+				if(decalSettings.albedoTexIdx !=100)
+				{
+					vec4 decalAlbedo = texture(texSampler[decalSettings.albedoTexIdx], decalUV);
+					blend = vec3(decalAlbedo.w * decalSettings.intensity);
+					diffuseAlbedo = mix(diffuseAlbedo, decalAlbedo.xyz * decalSettings.albedo, blend);
+				}
+				else
+				{
+					blend = vec3(decalSettings.intensity);
+				}
+
+				vec4 decalNormalTS = texture(texSampler[decalSettings.normalTexIdx], decalUV);
+				decalNormalTS.xyz = decalNormalTS.xyz * 2.0f - 1.0f;
+				decalNormalTS.z *= -1.0f;
+				vec3 decalNormalWS = orientation * decalNormalTS.xyz;
+				if(decalNormalTS.w != 0.0f) normalWS = mix(normalWS, decalNormalWS, blend);
+			}
 		}
+
 
 
 

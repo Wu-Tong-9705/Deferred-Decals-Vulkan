@@ -1,5 +1,6 @@
 #pragma once
 #define N_DECALS (8)
+#define N_DECAL_TYPE (4)
 class Param
 {
 private:
@@ -65,35 +66,77 @@ enum class Direction
     DOWN
 };
 
-class AppSettings
+class DecalSettings
 {
 private:
     map<ParamType, Param> m_params;
-    uint m_current_decal_Id;
+    uint m_current_decal_type;
+    uint m_current_decal_id;
+    bool m_is_show_cursor_decal;
+    bool m_is_show_all_decals;
 
 public:
-    AppSettings();
+    DecalSettings();
     void reset();
     
     float getParam(ParamType paramType);
     void update(ParamType paramType, Direction direction, float deltaTime);
     
+    uint get_decal_type()
+    {
+        return m_current_decal_type;
+    };
+    void set_decal_type(uint type)
+    {
+        m_current_decal_type = type;
+        m_current_decal_id = 0;
+        reset();
+    };
+    void tab_decal_type()
+    {
+        m_current_decal_type++;
+        m_current_decal_id = 0;
+        if (m_current_decal_type >= N_DECAL_TYPE)
+        {
+            m_current_decal_type = 0;
+        }
+        reset();
+    }
+
     uint get_decal_id()
     {
-        return m_current_decal_Id;
+        return m_current_decal_id;
     };
     void set_decal_id(uint id)
     {
-        m_current_decal_Id = id;
+        m_current_decal_id = id;
         reset();
     };
     void tab_decal()
     {
-        m_current_decal_Id++;
-        if (m_current_decal_Id >= N_DECALS)
+        m_current_decal_id++;
+        if (m_current_decal_id >= N_DECALS)
         {
-            m_current_decal_Id = 0;
+            m_current_decal_id = 0;
         }
+        reset();
     }
+
+    bool get_is_show_cursor_decal()
+    {
+        return m_is_show_cursor_decal;
+    };
+    void set_is_show_cursor_decal(bool isShow)
+    {
+        m_is_show_cursor_decal = isShow;
+    };
+    bool get_is_show_all_decals()
+    {
+        return m_is_show_all_decals;
+    };
+    void set_is_show_all_decals(bool isShow)
+    {
+        m_is_show_all_decals = isShow;
+    };
 };
 

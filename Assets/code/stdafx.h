@@ -140,7 +140,7 @@ struct TextureIndicesUniform
     uint32_t roughness;
     uint32_t metallic;
 };
-struct CursorDecal
+struct DecalSettingUniform
 {
     alignas(16) vec3 size;
     alignas(4) float rotation;
@@ -149,6 +149,8 @@ struct CursorDecal
     alignas(4) float albedo;
     alignas(4) uint32_t albedoTexIdx;
     alignas(4) uint32_t normalTexIdx;
+    alignas(4) uint32_t isShowCursor;
+    alignas(4) uint32_t isShowAllDecals;
 };
 struct Decal
 {
@@ -162,7 +164,7 @@ struct Decal
     alignas(4) uint32_t albedoTexIdx;
     alignas(4) uint32_t normalTexIdx;
 
-    Decal(vec3 position, vec3 normal, CursorDecal& cursorDecal)
+    Decal(vec3 position, vec3 normal, DecalSettingUniform& cursorDecal)
     {
         this->position = position;
         this->normal = normal;

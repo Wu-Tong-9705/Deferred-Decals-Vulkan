@@ -148,7 +148,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="Assets\code\core\appSettings.h" />
+    <ClInclude Include="Assets\code\core\decalSettings.h" />
     <ClInclude Include="Assets\code\core\engine.h" />
     <ClInclude Include="Assets\code\scene\camera.h" />
     <ClInclude Include="Assets\code\stdafx.h" />
@@ -160,7 +160,7 @@
     <ClInclude Include="Assets\code\support\single_active.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Assets\code\core\appSettings.cpp" />
+    <ClCompile Include="Assets\code\core\decalSettings.cpp" />
     <ClCompile Include="Assets\code\core\engine.cpp" />
     <ClCompile Include="Assets\code\main.cpp" />
     <ClCompile Include="Assets\code\scene\camera.cpp" />

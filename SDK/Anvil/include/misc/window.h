@@ -58,6 +58,12 @@ namespace Anvil
          * callback_arg: pointer to a OnMouseButtonCallbackArgument instance.
          **/
          WINDOW_CALLBACK_ID_MOUSE_LBUTTON_UP,
+         
+        /* Call-back issued when the user click a mouse.
+         *
+         * callback_arg: pointer to a OnMouseButtonCallbackArgument instance.
+         **/
+         WINDOW_CALLBACK_ID_MOUSE_RBUTTON_UP,
 
          /* Call-back issued when the user move a mouse.
           *

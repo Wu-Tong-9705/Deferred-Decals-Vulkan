@@ -7,25 +7,30 @@ public:
 	Mouse()
 	{
 		m_LButton = false;
+		m_RButton = false;
 	};
 
-	void click()
+	void click(bool isLeft = true)
 	{
-		m_LButton = true;
+		if(isLeft) m_LButton = true;
+		else m_RButton = true;
 	}
 
-	bool isClick()
+	bool isClick(bool isLeft = true)
 	{
-		return m_LButton;
+		if(isLeft) return m_LButton;
+		else return m_RButton;
 	}
 
-	void release()
+	void release(bool isLeft = true)
 	{
-		m_LButton = false;
+		if (isLeft) m_LButton = false;
+		else m_RButton = false;
 	}
 
 private:
 	bool m_LButton;
+	bool m_RButton;
 };
 
 class Key

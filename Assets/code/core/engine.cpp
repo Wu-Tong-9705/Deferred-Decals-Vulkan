@@ -77,7 +77,7 @@ void Engine::init()
     m_camera->SetAsActive();
     m_key = make_shared<Key>();
     m_mouse = make_shared<Mouse>();
-    m_appsettings = AppSettings();
+    m_decal_settings = DecalSettings();
     
     init_vulkan();
     init_window();
@@ -173,7 +173,15 @@ void Engine::init_window()
 
     m_window_ptr->register_for_callbacks(
         WINDOW_CALLBACK_ID_MOUSE_LBUTTON_UP,
-        bind(&Engine::mouse_click_callback,
+        bind(&Engine::mouse_click_LButton_callback,
+            this,
+            placeholders::_1),
+        this
+    );
+
+    m_window_ptr->register_for_callbacks(
+        WINDOW_CALLBACK_ID_MOUSE_RBUTTON_UP,
+        bind(&Engine::mouse_click_RButton_callback,
             this,
             placeholders::_1),
         this
@@ -357,7 +365,7 @@ void Engine::init_buffers()
     m_mvp_dynamic_buffer_helper = new DynamicBufferHelper<MVPUniform>(m_device_ptr.get(), "MVP");
     m_sunLight_dynamic_buffer_helper = new DynamicBufferHelper<SunLightUniform>(m_device_ptr.get(), "SunLight");
     m_camera_dynamic_buffer_helper = new DynamicBufferHelper<CameraUniform>(m_device_ptr.get(), "Camera");
-    m_cursor_decal_dynamic_buffer_helper = new DynamicBufferHelper<CursorDecal>(m_device_ptr.get(), "CursorDecal");
+    m_cursor_decal_dynamic_buffer_helper = new DynamicBufferHelper<DecalSettingUniform>(m_device_ptr.get(), "CursorDecal");
     m_decal_indices_dynamic_buffer_helper = new DynamicBufferHelper<IndexUniform>(m_device_ptr.get(), "Decal Indices", false);
     m_decal_ZBounds_dynamic_buffer_helper = new DynamicBufferHelper<ZBoundsUniform>(m_device_ptr.get(), "Decal ZBounds", false);
     #pragma endregion
@@ -1861,43 +1869,43 @@ void Engine::update_data(uint32_t in_n_swapchain_image)
     {
         if (m_key->IsPressed(KeyID::KEY_ID_WIDTH))
         {
-            m_appsettings.update(ParamType::DECAL_SCALE_X, Direction::UP, delta_time);
+            m_decal_settings.update(ParamType::DECAL_SCALE_X, Direction::UP, delta_time);
         }
         else if (m_key->IsPressed(KeyID::KEY_ID_HEIGHT))
         {
-            m_appsettings.update(ParamType::DECAL_SCALE_Y, Direction::UP, delta_time);
+            m_decal_settings.update(ParamType::DECAL_SCALE_Y, Direction::UP, delta_time);
         }
         else
         {
-            m_appsettings.update(ParamType::DECAL_SCALE_X, Direction::UP, delta_time);
-            m_appsettings.update(ParamType::DECAL_SCALE_Y, Direction::UP, delta_time);
+            m_decal_settings.update(ParamType::DECAL_SCALE_X, Direction::UP, delta_time);
+            m_decal_settings.update(ParamType::DECAL_SCALE_Y, Direction::UP, delta_time);
         }
     }
     if (m_key->IsPressed(KeyID::KEY_ID_MINUS))
     {
         if (m_key->IsPressed(KeyID::KEY_ID_WIDTH))
         {
-            m_appsettings.update(ParamType::DECAL_SCALE_X, Direction::DOWN, delta_time);
+            m_decal_settings.update(ParamType::DECAL_SCALE_X, Direction::DOWN, delta_time);
         }
         else if (m_key->IsPressed(KeyID::KEY_ID_HEIGHT))
         {
-            m_appsettings.update(ParamType::DECAL_SCALE_Y, Direction::DOWN, delta_time);
+            m_decal_settings.update(ParamType::DECAL_SCALE_Y, Direction::DOWN, delta_time);
         }
         else
         {
-            m_appsettings.update(ParamType::DECAL_SCALE_X, Direction::DOWN, delta_time);
-            m_appsettings.update(ParamType::DECAL_SCALE_Y, Direction::DOWN, delta_time);
+            m_decal_settings.update(ParamType::DECAL_SCALE_X, Direction::DOWN, delta_time);
+            m_decal_settings.update(ParamType::DECAL_SCALE_Y, Direction::DOWN, delta_time);
         }
     }
 
     //贴花方向
     if (m_key->IsPressed(KeyID::KEY_ID_ANTICLOCKWIZE))
     {
-        m_appsettings.update(ParamType::DECAL_ROTATION, Direction::DOWN, delta_time);
+        m_decal_settings.update(ParamType::DECAL_ROTATION, Direction::DOWN, delta_time);
     }
     if (m_key->IsPressed(KeyID::KEY_ID_CLOCKWIZE))
     {
-        m_appsettings.update(ParamType::DECAL_ROTATION, Direction::UP, delta_time);
+        m_decal_settings.update(ParamType::DECAL_ROTATION, Direction::UP, delta_time);
     }
 
     //贴花属性
@@ -1905,19 +1913,19 @@ void Engine::update_data(uint32_t in_n_swapchain_image)
     {
         if (m_key->IsPressed(KeyID::KEY_ID_F))
         {
-            m_appsettings.update(ParamType::DECAL_ANGLE_FADE, Direction::UP, delta_time);
+            m_decal_settings.update(ParamType::DECAL_ANGLE_FADE, Direction::UP, delta_time);
         }
         if (m_key->IsPressed(KeyID::KEY_ID_T))
         {
-            m_appsettings.update(ParamType::DECAL_THICKNESS, Direction::UP, delta_time);
+            m_decal_settings.update(ParamType::DECAL_THICKNESS, Direction::UP, delta_time);
         }
         else if (m_key->IsPressed(KeyID::KEY_ID_I))
         {
-            m_appsettings.update(ParamType::DECAL_INDENSITY, Direction::UP, delta_time);
+            m_decal_settings.update(ParamType::DECAL_INDENSITY, Direction::UP, delta_time);
         }
         else if (m_key->IsPressed(KeyID::KEY_ID_C))
         {
-            m_appsettings.update(ParamType::DECAL_ALBEDO, Direction::UP, delta_time);
+            m_decal_settings.update(ParamType::DECAL_ALBEDO, Direction::UP, delta_time);
         }
     }
     if (m_key->IsPressed(KeyID::KEY_ID_DOWN))
@@ -1925,19 +1933,19 @@ void Engine::update_data(uint32_t in_n_swapchain_image)
 
         if (m_key->IsPressed(KeyID::KEY_ID_F))
         {
-            m_appsettings.update(ParamType::DECAL_ANGLE_FADE, Direction::DOWN, delta_time);
+            m_decal_settings.update(ParamType::DECAL_ANGLE_FADE, Direction::DOWN, delta_time);
         }
         if (m_key->IsPressed(KeyID::KEY_ID_T))
         {
-            m_appsettings.update(ParamType::DECAL_THICKNESS, Direction::DOWN, delta_time);
+            m_decal_settings.update(ParamType::DECAL_THICKNESS, Direction::DOWN, delta_time);
         }
         else if (m_key->IsPressed(KeyID::KEY_ID_I))
         {
-            m_appsettings.update(ParamType::DECAL_INDENSITY, Direction::DOWN, delta_time);
+            m_decal_settings.update(ParamType::DECAL_INDENSITY, Direction::DOWN, delta_time);
         }
         else if (m_key->IsPressed(KeyID::KEY_ID_C))
         {
-            m_appsettings.update(ParamType::DECAL_ALBEDO, Direction::DOWN, delta_time);
+            m_decal_settings.update(ParamType::DECAL_ALBEDO, Direction::DOWN, delta_time);
         }
     }
 
@@ -1946,13 +1954,63 @@ void Engine::update_data(uint32_t in_n_swapchain_image)
     {
         if (m_key->IsPressed((KeyID)(KeyID::KEY_ID_1 + i)))
         {
-            m_appsettings.set_decal_id(i);
+            m_decal_settings.set_decal_id(i);
         }
+    }
+    if (m_key->IsPressed(KeyID::KEY_ID_TAB_TYPE))
+    {
+        m_decal_settings.tab_decal_type();
+        m_key->SetReleased(KeyID::KEY_ID_TAB_TYPE);
     }
     if (m_key->IsPressed(KeyID::KEY_ID_TAB))
     {
-        m_appsettings.tab_decal();
+        m_decal_settings.tab_decal();
         m_key->SetReleased(KeyID::KEY_ID_TAB);
+    }
+
+    //复原/删除/清空贴花
+    if (m_key->IsPressed(KeyID::KEY_ID_R))
+    {
+        m_decal_settings.reset();
+        m_key->SetReleased(KeyID::KEY_ID_R);
+    }
+    if (m_key->IsPressed(KeyID::KEY_ID_BACKSPACE))
+    {
+        m_n_decal--;
+        m_indexUniform.numIntersectingDecals = 0;
+        Vulkan::vkDeviceWaitIdle(m_device_ptr->get_device_vk());
+        for (uint32_t n_swapchain_image = 0; n_swapchain_image < N_SWAPCHAIN_IMAGES; n_swapchain_image++)
+        {
+            m_command_buffers[n_swapchain_image].reset();
+        }
+        init_command_buffers();
+        m_key->SetReleased(KeyID::KEY_ID_BACKSPACE);
+    }
+    if (m_key->IsPressed(KeyID::KEY_ID_DELETE))
+    {
+        m_n_decal = 0;
+        m_indexUniform.numIntersectingDecals = 0;
+        Vulkan::vkDeviceWaitIdle(m_device_ptr->get_device_vk());
+        for (uint32_t n_swapchain_image = 0; n_swapchain_image < N_SWAPCHAIN_IMAGES; n_swapchain_image++)
+        {
+            m_command_buffers[n_swapchain_image].reset();
+        }
+        init_command_buffers();
+        m_key->SetReleased(KeyID::KEY_ID_DELETE);
+    }
+
+    //隐藏/显示贴花
+    if (m_mouse->isClick(false))
+    {
+        if (m_decal_settings.get_is_show_cursor_decal()) m_decal_settings.set_is_show_cursor_decal(false);
+        else m_decal_settings.set_is_show_cursor_decal(true);
+        m_mouse->release(false);
+    }
+    if (m_key->IsPressed(KeyID::KEY_ID_SPACE))
+    {
+        if (m_decal_settings.get_is_show_all_decals()) m_decal_settings.set_is_show_all_decals(false);
+        else m_decal_settings.set_is_show_all_decals(true);
+        m_key->SetReleased(KeyID::KEY_ID_SPACE);
     }
     #pragma endregion
 
@@ -1974,52 +2032,67 @@ void Engine::update_data(uint32_t in_n_swapchain_image)
     camera.CameraPosWS = m_camera->GetCameraWorldPos();
     m_camera_dynamic_buffer_helper->update(queue, &camera, in_n_swapchain_image);
 
-    CursorDecal cursorDecal;
-    uint decal_id = m_appsettings.get_decal_id();
-    vec2 decal_size = m_model->get_texture_size(decal_id * 2);
-    cursorDecal.size = vec3(
-        decal_size.x * m_appsettings.getParam(ParamType::DECAL_SCALE_X),
-        decal_size.y * m_appsettings.getParam(ParamType::DECAL_SCALE_Y),
-        m_appsettings.getParam(ParamType::DECAL_THICKNESS));
-    cursorDecal.albedoTexIdx = decal_id * 2;
-    cursorDecal.normalTexIdx = decal_id * 2 + 1;
-    cursorDecal.rotation = m_appsettings.getParam(ParamType::DECAL_ROTATION);
-    cursorDecal.angle_fade = m_appsettings.getParam(ParamType::DECAL_ANGLE_FADE);
-    cursorDecal.albedo = m_appsettings.getParam(ParamType::DECAL_ALBEDO);
-    cursorDecal.intensity = m_appsettings.getParam(ParamType::DECAL_INDENSITY);
-    m_cursor_decal_dynamic_buffer_helper->update(queue, &cursorDecal, in_n_swapchain_image);
+    DecalSettingUniform decalSetting;
+    uint decal_type = m_decal_settings.get_decal_type();
+    uint decal_id = m_decal_settings.get_decal_id();
+
+    if (decal_type == 3)
+    {
+        decalSetting.albedoTexIdx = 100;
+        decalSetting.normalTexIdx = decal_type * 16 + decal_id;
+    }
+    else
+    {
+        decalSetting.albedoTexIdx = decal_type * 16 + decal_id * 2;
+        decalSetting.normalTexIdx = decal_type * 16 + decal_id * 2 + 1;
+    }
+    vec2 decal_size = m_model->get_texture_size(decal_type == 3 ? decalSetting.normalTexIdx : decalSetting.albedoTexIdx);
+    decalSetting.size = vec3(
+        decal_size.x * m_decal_settings.getParam(ParamType::DECAL_SCALE_X),
+        decal_size.y * m_decal_settings.getParam(ParamType::DECAL_SCALE_Y),
+        m_decal_settings.getParam(ParamType::DECAL_THICKNESS));
+    decalSetting.rotation = m_decal_settings.getParam(ParamType::DECAL_ROTATION);
+    decalSetting.angle_fade = m_decal_settings.getParam(ParamType::DECAL_ANGLE_FADE);
+    decalSetting.albedo = m_decal_settings.getParam(ParamType::DECAL_ALBEDO);
+    decalSetting.intensity = m_decal_settings.getParam(ParamType::DECAL_INDENSITY);
+    decalSetting.isShowCursor = m_decal_settings.get_is_show_cursor_decal();
+    decalSetting.isShowAllDecals = m_decal_settings.get_is_show_all_decals();
+    m_cursor_decal_dynamic_buffer_helper->update(queue, &decalSetting, in_n_swapchain_image);
 
     update_decal();
     m_decal_indices_dynamic_buffer_helper->update(queue, &m_indexUniform, in_n_swapchain_image);
     m_decal_ZBounds_dynamic_buffer_helper->update(queue, &m_zBoundsUniform, in_n_swapchain_image);
     #pragma endregion
 
-    #pragma region 处理点击事件，存入贴花
+    #pragma region 处理点击事件，隐藏/存入贴花
     if (m_mouse->isClick())
     {
-        PickingStorage pickingStorage;
-        m_picking_storage_buffer_ptr->read(
-            0,
-            sizeof(PickingStorage),
-            &pickingStorage,
-            queue);
-        m_decals[(m_n_decal++) % N_MAX_STORED_DECALS] = Decal(pickingStorage.Position, pickingStorage.Normal, cursorDecal);
-        m_decals_uniform_buffer_ptr->write(
-            0, /* start_offset */
-            m_decals_buffer_size,
-            m_decals,
-            m_device_ptr->get_universal_queue(0));
-
-        update_decal();
-        m_decal_indices_dynamic_buffer_helper->update(queue, &m_indexUniform, in_n_swapchain_image);
-        m_decal_ZBounds_dynamic_buffer_helper->update(queue, &m_zBoundsUniform, in_n_swapchain_image);
-
-        Vulkan::vkDeviceWaitIdle(m_device_ptr->get_device_vk());
-        for (uint32_t n_swapchain_image = 0; n_swapchain_image < N_SWAPCHAIN_IMAGES; n_swapchain_image++)
+        if (m_decal_settings.get_is_show_cursor_decal())
         {
-            m_command_buffers[n_swapchain_image].reset();
+            PickingStorage pickingStorage;
+            m_picking_storage_buffer_ptr->read(
+                0,
+                sizeof(PickingStorage),
+                &pickingStorage,
+                queue);
+            m_decals[(m_n_decal++) % N_MAX_STORED_DECALS] = Decal(pickingStorage.Position, pickingStorage.Normal, decalSetting);
+            m_decals_uniform_buffer_ptr->write(
+                0, /* start_offset */
+                m_decals_buffer_size,
+                m_decals,
+                m_device_ptr->get_universal_queue(0));
+
+            update_decal();
+            m_decal_indices_dynamic_buffer_helper->update(queue, &m_indexUniform, in_n_swapchain_image);
+            m_decal_ZBounds_dynamic_buffer_helper->update(queue, &m_zBoundsUniform, in_n_swapchain_image);
+
+            Vulkan::vkDeviceWaitIdle(m_device_ptr->get_device_vk());
+            for (uint32_t n_swapchain_image = 0; n_swapchain_image < N_SWAPCHAIN_IMAGES; n_swapchain_image++)
+            {
+                m_command_buffers[n_swapchain_image].reset();
+            }
+            init_command_buffers();
         }
-        init_command_buffers();
 
         m_mouse->release();
     }
@@ -2130,9 +2203,14 @@ void Engine::mouse_move_callback(CallbackArgument* argumentPtr)
 
 }
 
-void Engine::mouse_click_callback(CallbackArgument* argumentPtr)
+void Engine::mouse_click_LButton_callback(CallbackArgument* argumentPtr)
 {
     m_mouse->click();
+}
+
+void Engine::mouse_click_RButton_callback(CallbackArgument* argumentPtr)
+{
+    m_mouse->click(false);
 }
 
 void Engine::scroll_callback(CallbackArgument* argumentPtr)
