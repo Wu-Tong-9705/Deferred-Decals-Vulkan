@@ -57,7 +57,13 @@ enum class ParamType
     DECAL_ROTATION,
     DECAL_ANGLE_FADE,
     DECAL_INDENSITY,
-    DECAL_ALBEDO
+    DECAL_ALBEDO,
+    SUNLIGHT_DIRECTION_X,
+    SUNLIGHT_DIRECTION_Y,
+    SUNLIGHT_DIRECTION_Z,
+    SUNLIGHT_IRRADIANCE_R,
+    SUNLIGHT_IRRADIANCE_G,
+    SUNLIGHT_IRRADIANCE_B
 };
 
 enum class Direction
@@ -66,10 +72,21 @@ enum class Direction
     DOWN
 };
 
-class DecalSettings
+class Settings
+{
+protected:
+    map<ParamType, Param> m_params;
+
+public:
+    Settings() {};
+    void reset();
+    float getParam(ParamType paramType);
+    void update(ParamType paramType, Direction direction, float deltaTime);
+};
+
+class DecalSettings : public Settings
 {
 private:
-    map<ParamType, Param> m_params;
     uint m_current_decal_type;
     uint m_current_decal_id;
     bool m_is_show_cursor_decal;
@@ -77,10 +94,6 @@ private:
 
 public:
     DecalSettings();
-    void reset();
-    
-    float getParam(ParamType paramType);
-    void update(ParamType paramType, Direction direction, float deltaTime);
     
     uint get_decal_type()
     {
@@ -140,3 +153,8 @@ public:
     };
 };
 
+class LightSettings : public Settings
+{
+public:
+    LightSettings();
+};

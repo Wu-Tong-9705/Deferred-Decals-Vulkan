@@ -84,6 +84,12 @@ namespace Anvil
         KEY_ID_TAB_TYPE = 192,
         KEY_ID_CTRL = 17,
 
+        KEL_ID_L = 76,
+        KEL_ID_O = 79,
+        KEL_ID_VECTOR_R = 786,
+        KEL_ID_VECTOR_G = 222,
+        KEL_ID_VECTOR_B = 191,
+
         KEY_ID_1 = 49, 
         KEY_ID_2, 
         KEY_ID_3, 

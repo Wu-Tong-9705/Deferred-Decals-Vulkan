@@ -207,16 +207,16 @@ vec3 CalcLighting(vec3 normal, vec3 lightDir, vec3 peakIrradiance,
 	const float nDotL = clamp(dot(normal, lightDir),0.0,1.0);
 
 	vec3 fresnel = vec3(1.0f,0.0f,0.0f);
-	if(nDotL > 0.0f)
+	if(nDotL > 0.15f)
 	{
 		vec3 h = normalize(view + lightDir);
 		fresnel = Fresnel(specularAlbedo, h, lightDir);
 
-		float specular = GGX_Specular(roughness, normal, h, view, lightDir);
+		float specular = 0.8 * GGX_Specular(roughness, normal, h, view, lightDir);
 		lighting += specular * fresnel;
 	}
 
-	return (lighting * nDotL) * peakIrradiance;
+	return lighting + lighting * nDotL * peakIrradiance;
 }
 
 //-------------------------------------------------------------------------------------------------

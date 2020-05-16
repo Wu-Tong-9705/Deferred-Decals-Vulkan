@@ -42,7 +42,7 @@
     <ClInclude Include="Assets\code\support\input.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="Assets\code\core\decalSettings.h">
+    <ClInclude Include="Assets\code\core\settings.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
@@ -74,7 +74,7 @@
     <ClCompile Include="Assets\code\support\dynamicBufferHelper.h">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="Assets\code\core\decalSettings.cpp">
+    <ClCompile Include="Assets\code\core\settings.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

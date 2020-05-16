@@ -66,18 +66,20 @@ Engine::Engine()
      m_is_full_screen                  (false),
      m_width                           (1280),
      m_height                          (720),
-     m_n_decal                         (0)
+     m_n_decal                         (0),
+     m_frame_rate                      (0)
 {
     // ..
 }
 
 void Engine::init()
 {
-    m_camera = make_shared<Camera>(vec3(-11.5f, 1.85f, -0.45f));
+    m_camera = make_shared<Camera>(vec3(11.0f, 6.85f, 1.7f));
     m_camera->SetAsActive();
     m_key = make_shared<Key>();
     m_mouse = make_shared<Mouse>();
     m_decal_settings = DecalSettings();
+    m_light_settings = LightSettings();
     
     init_vulkan();
     init_window();
@@ -1729,6 +1731,7 @@ void Engine::recreate_swapchain()
 #pragma region 运行
 void Engine::run()
 {
+    m_last_frame_time = chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now().time_since_epoch());
     m_window_ptr->run();
 }
 
@@ -1761,7 +1764,7 @@ void Engine::draw_frame()
             SetWindowLong(m_window_ptr->get_handle(), GWL_STYLE, WS_OVERLAPPEDWINDOW);
             SetWindowPos(
                 m_window_ptr->get_handle(), 
-                HWND_TOPMOST,
+                HWND_NOTOPMOST,
                 m_rect_before_full_screen.left,
                 m_rect_before_full_screen.top,
                 m_rect_before_full_screen.right,
@@ -2014,6 +2017,96 @@ void Engine::update_data(uint32_t in_n_swapchain_image)
     }
     #pragma endregion
 
+    #pragma region 灯光设置
+    //灯光强度
+    if (m_key->IsPressed(KeyID::KEL_ID_L) && m_key->IsPressed(KEY_ID_UP))
+    {
+        if (m_key->IsPressed(KeyID::KEL_ID_VECTOR_R))
+        {
+            m_light_settings.update(ParamType::SUNLIGHT_IRRADIANCE_R, Direction::UP, delta_time);
+        }
+        else if (m_key->IsPressed(KeyID::KEL_ID_VECTOR_G))
+        {
+            m_light_settings.update(ParamType::SUNLIGHT_IRRADIANCE_G, Direction::UP, delta_time);
+        }
+        else if (m_key->IsPressed(KeyID::KEL_ID_VECTOR_B))
+        {
+            m_light_settings.update(ParamType::SUNLIGHT_IRRADIANCE_B, Direction::UP, delta_time);
+        }
+        else
+        {
+            m_light_settings.update(ParamType::SUNLIGHT_IRRADIANCE_R, Direction::UP, delta_time);
+            m_light_settings.update(ParamType::SUNLIGHT_IRRADIANCE_G, Direction::UP, delta_time);
+            m_light_settings.update(ParamType::SUNLIGHT_IRRADIANCE_B, Direction::UP, delta_time);
+        }
+    }
+    if (m_key->IsPressed(KeyID::KEL_ID_L) && m_key->IsPressed(KEY_ID_DOWN))
+    {
+        if (m_key->IsPressed(KeyID::KEL_ID_VECTOR_R))
+        {
+            m_light_settings.update(ParamType::SUNLIGHT_IRRADIANCE_R, Direction::DOWN, delta_time);
+        }
+        else if (m_key->IsPressed(KeyID::KEL_ID_VECTOR_G))
+        {
+            m_light_settings.update(ParamType::SUNLIGHT_IRRADIANCE_G, Direction::DOWN, delta_time);
+        }
+        else if (m_key->IsPressed(KeyID::KEL_ID_VECTOR_B))
+        {
+            m_light_settings.update(ParamType::SUNLIGHT_IRRADIANCE_B, Direction::DOWN, delta_time);
+        }
+        else
+        {
+            m_light_settings.update(ParamType::SUNLIGHT_IRRADIANCE_R, Direction::DOWN, delta_time);
+            m_light_settings.update(ParamType::SUNLIGHT_IRRADIANCE_G, Direction::DOWN, delta_time);
+            m_light_settings.update(ParamType::SUNLIGHT_IRRADIANCE_B, Direction::DOWN, delta_time);
+        }
+    }
+
+    //灯光方向
+    if (m_key->IsPressed(KeyID::KEL_ID_O) && m_key->IsPressed(KEY_ID_UP))
+    {
+        if (m_key->IsPressed(KeyID::KEL_ID_VECTOR_R))
+        {
+            m_light_settings.update(ParamType::SUNLIGHT_DIRECTION_X, Direction::UP, delta_time);
+        }
+        else if (m_key->IsPressed(KeyID::KEL_ID_VECTOR_G))
+        {
+            m_light_settings.update(ParamType::SUNLIGHT_DIRECTION_Y, Direction::UP, delta_time);
+        }
+        else if (m_key->IsPressed(KeyID::KEL_ID_VECTOR_B))
+        {
+            m_light_settings.update(ParamType::SUNLIGHT_DIRECTION_Z, Direction::UP, delta_time);
+        }
+        else
+        {
+            m_light_settings.update(ParamType::SUNLIGHT_DIRECTION_X, Direction::UP, delta_time);
+            m_light_settings.update(ParamType::SUNLIGHT_DIRECTION_Y, Direction::UP, delta_time);
+            m_light_settings.update(ParamType::SUNLIGHT_DIRECTION_Z, Direction::UP, delta_time);
+        }
+    }
+    if (m_key->IsPressed(KeyID::KEL_ID_O) && m_key->IsPressed(KEY_ID_DOWN))
+    {
+        if (m_key->IsPressed(KeyID::KEL_ID_VECTOR_R))
+        {
+            m_light_settings.update(ParamType::SUNLIGHT_DIRECTION_X, Direction::DOWN, delta_time);
+        }
+        else if (m_key->IsPressed(KeyID::KEL_ID_VECTOR_G))
+        {
+            m_light_settings.update(ParamType::SUNLIGHT_DIRECTION_Y, Direction::DOWN, delta_time);
+        }
+        else if (m_key->IsPressed(KeyID::KEL_ID_VECTOR_B))
+        {
+            m_light_settings.update(ParamType::SUNLIGHT_DIRECTION_Z, Direction::DOWN, delta_time);
+        }
+        else
+        {
+            m_light_settings.update(ParamType::SUNLIGHT_DIRECTION_X, Direction::DOWN, delta_time);
+            m_light_settings.update(ParamType::SUNLIGHT_DIRECTION_Y, Direction::DOWN, delta_time);
+            m_light_settings.update(ParamType::SUNLIGHT_DIRECTION_Z, Direction::DOWN, delta_time);
+        }
+    }
+    #pragma endregion
+
     #pragma region 写入动态uniform
     Queue* queue = m_device_ptr->get_universal_queue(0);
 
@@ -2024,8 +2117,14 @@ void Engine::update_data(uint32_t in_n_swapchain_image)
     m_mvp_dynamic_buffer_helper->update(queue, &mvp, in_n_swapchain_image);
 
     SunLightUniform sun_light;
-    sun_light.SunDirectionWS = vec3(0.5f, 0.1f, 0.5f);
-    sun_light.SunIrradiance = vec3(10.0f, 10.0f, 10.0f);
+    sun_light.SunDirectionWS = vec3(
+        m_light_settings.getParam(ParamType::SUNLIGHT_DIRECTION_X),
+        m_light_settings.getParam(ParamType::SUNLIGHT_DIRECTION_Y),
+        m_light_settings.getParam(ParamType::SUNLIGHT_DIRECTION_Z));
+    sun_light.SunIrradiance = vec3(
+        m_light_settings.getParam(ParamType::SUNLIGHT_IRRADIANCE_R),
+        m_light_settings.getParam(ParamType::SUNLIGHT_IRRADIANCE_G),
+        m_light_settings.getParam(ParamType::SUNLIGHT_IRRADIANCE_B));
     m_sunLight_dynamic_buffer_helper->update(queue, &sun_light, in_n_swapchain_image);
 
     CameraUniform camera;
@@ -2097,6 +2196,52 @@ void Engine::update_data(uint32_t in_n_swapchain_image)
         m_mouse->release();
     }
     #pragma endregion
+
+    #pragma region 输出信息
+    auto now_time = chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now().time_since_epoch());
+    m_frame_rate++;
+    if (now_time.count() - m_last_frame_time.count() > 1000)
+    {
+        system("cls");
+        cout << "=================Render Performance=================" << endl;
+        cout << "FPS:" << m_frame_rate << endl
+             << "Decal Num:" << m_n_decal << endl 
+             << "Render Decal:" << boolalpha << m_decal_settings.get_is_show_all_decals() << endl
+             << "Render Cursor:" << boolalpha << m_decal_settings.get_is_show_cursor_decal() << endl << endl;
+
+        cout << "===================Decal Parameter===================" << endl;
+        cout << fixed << setprecision(2)
+             << "Scale:(" << m_decal_settings.getParam(ParamType::DECAL_SCALE_X) << "," << m_decal_settings.getParam(ParamType::DECAL_SCALE_Y) << ")" << endl
+             << "Rotation:" << m_decal_settings.getParam(ParamType::DECAL_ROTATION) << endl
+             << "Thickness:" << m_decal_settings.getParam(ParamType::DECAL_THICKNESS) << endl
+             << "Angle Fade:" << m_decal_settings.getParam(ParamType::DECAL_ANGLE_FADE) << endl
+             << "Indensity:" << m_decal_settings.getParam(ParamType::DECAL_INDENSITY) << endl
+             << "Albedo:" << m_decal_settings.getParam(ParamType::DECAL_ALBEDO) << endl << endl;
+
+        cout << "==================Camera Infomation==================" << endl;
+        vec3 pos = m_camera->GetCameraWorldPos();
+        cout << fixed << setprecision(2)
+             << "Positon:(" << pos.x << "," << pos.y << "," << pos.z << ")" << endl
+             << "Yaw:" << m_camera->GetYaw() << endl
+             << "Pitch:" << m_camera->GetPitch() << endl
+             << "Zoom:" << m_camera->GetZoom() << ";" << endl << endl;
+
+        cout << "==================Light Infomation==================" << endl;
+        cout << fixed << setprecision(2)
+             << "Direction:(" 
+             << m_light_settings.getParam(ParamType::SUNLIGHT_DIRECTION_X) << ","
+             << m_light_settings.getParam(ParamType::SUNLIGHT_DIRECTION_Y) << ","
+             << m_light_settings.getParam(ParamType::SUNLIGHT_DIRECTION_Z) << ")" << endl
+             << "Irradiance:("
+             << m_light_settings.getParam(ParamType::SUNLIGHT_IRRADIANCE_R) << ","
+             << m_light_settings.getParam(ParamType::SUNLIGHT_IRRADIANCE_G) << ","
+             << m_light_settings.getParam(ParamType::SUNLIGHT_IRRADIANCE_B) << ")";
+        
+        m_frame_rate = 0;
+        m_last_frame_time = now_time;
+    }
+    #pragma endregion
+
 }
 
 void Engine::update_decal()

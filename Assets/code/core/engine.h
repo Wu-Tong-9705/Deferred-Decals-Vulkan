@@ -4,7 +4,7 @@
 #include "../support/input.h"
 #include "../scene/model.h"
 #include "support/dynamicBufferHelper.h"
-#include "decalSettings.h"
+#include "settings.h"
 
 #pragma region struct
 struct DeferredConstants
@@ -157,6 +157,7 @@ private:
     shared_ptr<Key>           m_key;
     shared_ptr<Mouse>         m_mouse;
     DecalSettings             m_decal_settings;
+    LightSettings             m_light_settings;
     #pragma endregion
 
     #pragma region image
@@ -195,7 +196,7 @@ private:
     DynamicBufferHelper<MVPUniform>*        m_mvp_dynamic_buffer_helper;
     DynamicBufferHelper<SunLightUniform>*   m_sunLight_dynamic_buffer_helper;
     DynamicBufferHelper<CameraUniform>*     m_camera_dynamic_buffer_helper;
-    DynamicBufferHelper<DecalSettingUniform>*       m_cursor_decal_dynamic_buffer_helper;
+    DynamicBufferHelper<DecalSettingUniform>* m_cursor_decal_dynamic_buffer_helper;
     IndexUniform                            m_indexUniform;
     DynamicBufferHelper<IndexUniform>*      m_decal_indices_dynamic_buffer_helper;
     ZBoundsUniform                          m_zBoundsUniform;
@@ -231,5 +232,7 @@ private:
     DeferredConstants m_deferred_constants;
     int m_num_x_tiles;
     int m_num_y_tiles;
+    chrono::milliseconds m_last_frame_time;
+    int m_frame_rate;
     #pragma endregion
 };

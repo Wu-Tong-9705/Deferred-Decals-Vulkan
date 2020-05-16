@@ -42,6 +42,21 @@ mat3 Camera::GetCameraWorldOrientation()
 	return inverse(orientation);
 }
 
+float Camera::GetYaw()
+{
+	return m_yaw;
+}
+
+float Camera::GetPitch()
+{
+	return m_pitch;
+}
+
+float Camera::GetZoom()
+{
+	return m_zoom;
+}
+
 float Camera::GetNearZ()
 {
 	return m_near_z;
@@ -51,6 +66,7 @@ float Camera::GetFarZ()
 {
 	return m_far_z;
 }
+
 vec3 Camera::GetNearZCenterWorldPos()
 {
 	return m_position + m_near_z * m_front;

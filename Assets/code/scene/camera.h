@@ -11,7 +11,7 @@ enum Camera_Movement {
 };
 
 //默认的相机参数
-const float YAW = -90.0f;//偏航角
+const float YAW = -180.0f;//偏航角
 const float PITCH = 0.0f;//俯仰角
 const float NEARZ = 0.1f;//近裁剪面
 const float FARZ = 35.0f;//远裁剪面
@@ -31,6 +31,9 @@ public:
 	mat4 GetProjMatrix();
 	float GetNearZ();
 	float GetFarZ();
+	float GetYaw();
+	float GetPitch();
+	float GetZoom();
 	vec3 GetNearZCenterWorldPos();
 
 	vec3 GetCameraWorldPos();
